@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <!-- WPF0001: ThemeMode (Fluent-тема Windows 11) помечен как экспериментальный -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>RecordSummary</AssemblyName>
+    <RootNamespace>RecordSummary</RootNamespace>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- С UseWPF SDK убирает эти глобальные using (конфликт с System.Windows.Shapes.Path) -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="Whisper.net" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime.Vulkan" Version="1.9.1" />
+    <PackageReference Include="LLamaSharp" Version="0.30.0" />
+    <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.30.0" />
+    <PackageReference Include="LLamaSharp.Backend.Vulkan.Windows" Version="0.30.0" />
+  </ItemGroup>
+
+</Project>
