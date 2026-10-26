@@ -23,7 +23,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
 
     Config _cfg = Config.Load();
     readonly NotifyIcon _tray;
-    readonly ToolStripMenuItem _statusItem, _recordItem, _autoRecordItem, _autostartItem;
+    readonly ToolStripMenuItem _statusItem, _recordItem, _pauseItem, _widgetItem, _autoRecordItem, _autostartItem;
     readonly CallDetector _detector;
     readonly Dictionary<Color, Icon> _icons = new();
     readonly System.Windows.Forms.Timer _statusTimer = new() { Interval = 1000 };
@@ -36,11 +36,14 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
     string? _lastProgress;
     SettingsWindow? _settings;
     CallsWindow? _callsWindow;
+    RecordingWidget? _widget;
 
     public TrayApp()
     {
         _statusItem = new ToolStripMenuItem("Жду звонка") { Enabled = false };
         _recordItem = new ToolStripMenuItem("Начать запись", null, (_, _) => ToggleRecording());
+        _pauseItem = new ToolStripMenuItem("Пауза", null, (_, _) => TogglePause()) { Visible = false };
+        _widgetItem = new ToolStripMenuItem("Показать окошко записи", null, (_, _) => ShowWidget()) { Visible = false };
         _autoRecordItem = new ToolStripMenuItem("Записывать звонки без вопроса") { Checked = _cfg.AutoRecord, CheckOnClick = true };
         _autoRecordItem.CheckedChanged += (_, _) => { _cfg.AutoRecord = _autoRecordItem.Checked; _cfg.Save(); };
         _autostartItem = new ToolStripMenuItem("Запускать при входе в Windows") { Checked = IsAutostart(), CheckOnClick = true };
@@ -51,6 +54,8 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Записи…", null, (_, _) => OpenCalls(null)) { Font = new Font(menu.Font, FontStyle.Bold) });
         menu.Items.Add(_recordItem);
+        menu.Items.Add(_pauseItem);
+        menu.Items.Add(_widgetItem);
         menu.Items.Add("Открыть папку записей", null, (_, _) => { Directory.CreateDirectory(_cfg.OutputPath); Shell(_cfg.OutputPath); });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Настройки…", null, (_, _) => OpenSettings());
@@ -199,7 +204,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         _settings.Activate();
     }
 
-    string RecordingText =>$"Запись: {_recordingApp} {_recorder!.Elapsed:hh\\:mm\\:ss}";
+    string RecordingText => $"{(_recorder!.IsPaused ? "Пауза" : "Запись")}: {_recordingApp} {_recorder.Elapsed:hh\\:mm\\:ss}";
 
     void OnCallStarted(string app)
     {
@@ -207,20 +212,89 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         if (_cfg.AutoRecord)
         {
             StartRecording(app, tiedToCall: true);
-            Balloon("Идёт запись", $"Звонок в {app} записывается. Запись остановится, когда звонок закончится.", null);
+            if (!_cfg.ShowRecordingWidget)
+                Balloon("Идёт запись", $"Звонок в {app} записывается. Запись остановится, когда звонок закончится.", null);
             return;
         }
         UpdateState();
-        Balloon("Обнаружен звонок", $"{app} использует микрофон. Нажмите, чтобы записать звонок.", () =>
+        if (_cfg.ShowRecordingWidget)
         {
-            if (_recorder == null && _detector.ActiveCall != null) StartRecording(_detector.ActiveCall, tiedToCall: true);
-        });
+            // Плашка не исчезает, как уведомление: висит, пока идёт звонок или пока её не закроют.
+            Widget().ShowOffer(app);
+            _widget!.Show();
+            return;
+        }
+        Balloon("Обнаружен звонок", $"{app} использует микрофон. Нажмите, чтобы записать звонок.", RecordActiveCall);
+    }
+
+    void RecordActiveCall()
+    {
+        if (_recorder == null && _detector.ActiveCall != null) StartRecording(_detector.ActiveCall, tiedToCall: true);
     }
 
     void OnCallEnded(string app)
     {
         if (_recorder != null && _tiedToCall) StopRecording();
-        else UpdateState();
+        else
+        {
+            if (_recorder == null) CloseWidget();   // предложение записать звонок, который уже закончился
+            UpdateState();
+        }
+    }
+
+    // ---------- Плашка записи ----------
+
+    RecordingWidget Widget()
+    {
+        if (_widget != null) return _widget;
+        EnsureWpf();
+        _widget = new RecordingWidget(_cfg.WidgetLeft, _cfg.WidgetTop);
+        _widget.RecordRequested += RecordActiveCall;
+        _widget.PauseToggled += TogglePause;
+        _widget.StopRequested += () => { if (_recorder != null) StopRecording(); };
+        _widget.Dismissed += () =>
+        {
+            CloseWidget();
+            UpdateMenu();   // во время записи — вернуть плашку можно из меню трея
+        };
+        _widget.Moved += (left, top) =>
+        {
+            _cfg.WidgetLeft = left;
+            _cfg.WidgetTop = top;
+            _cfg.Save();
+        };
+        _widget.Closed += (_, _) => _widget = null;
+        return _widget;
+    }
+
+    void ShowWidget()
+    {
+        if (_recorder == null) return;
+        Widget().ShowRecording(_recordingApp, _recorder);
+        _widget!.Show();
+        UpdateMenu();
+    }
+
+    void CloseWidget() => _widget?.Close();
+
+    void TogglePause()
+    {
+        if (_recorder == null) return;
+        if (_recorder.IsPaused) _recorder.Resume();
+        else _recorder.Pause();
+        _widget?.UpdatePaused();
+        UpdateMenu();
+        UpdateState();
+    }
+
+    /// <summary>Пункты меню, которые зависят от записи: пауза и "Показать окошко".</summary>
+    void UpdateMenu()
+    {
+        bool recording = _recorder != null;
+        _recordItem.Text = recording ? "Остановить запись" : "Начать запись";
+        _pauseItem.Visible = recording;
+        _pauseItem.Text = _recorder?.IsPaused == true ? "Продолжить запись" : "Пауза";
+        _widgetItem.Visible = recording && _widget == null;
     }
 
     void ToggleRecording()
@@ -241,8 +315,10 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         }
         _recordingApp = app;
         _tiedToCall = tiedToCall;
-        _recordItem.Text = "Остановить запись";
         _statusTimer.Start();
+        if (_cfg.ShowRecordingWidget) ShowWidget();
+        else CloseWidget();
+        UpdateMenu();
         UpdateState();
         CallsChanged?.Invoke();
     }
@@ -253,7 +329,8 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         _recorder = null;
         _statusTimer.Stop();
         rec.Dispose();
-        _recordItem.Text = "Начать запись";
+        CloseWidget();
+        UpdateMenu();
         _ = ProcessAsync(rec.Folder, _recordingApp);
     }
 
@@ -355,6 +432,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         {
             _settings?.Close();
             _callsWindow?.Close();
+            _widget?.Close();
             _recorder?.Dispose();
             _detector.Dispose();
             _statusTimer.Dispose();

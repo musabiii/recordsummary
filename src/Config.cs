@@ -12,6 +12,13 @@ public sealed class Config
     /// <summary>true — начинать запись сразу; false — спрашивать уведомлением.</summary>
     public bool AutoRecord { get; set; }
 
+    /// <summary>Плашка поверх окон: "Записать?" при звонке и таймер с кнопками во время записи.</summary>
+    public bool ShowRecordingWidget { get; set; } = true;
+
+    /// <summary>Где пользователь оставил плашку; null — правый нижний угол.</summary>
+    public double? WidgetLeft { get; set; }
+    public double? WidgetTop { get; set; }
+
     /// <summary>Сколько приложение должно держать микрофон, чтобы считать это звонком (отсекает голосовой поиск и т.п.).</summary>
     public int StartDelaySeconds { get; set; } = 3;
 

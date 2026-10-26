@@ -49,7 +49,30 @@ public sealed class CallRecorder : IDisposable
         _systemCapture.StartRecording();
     }
 
+    /// <summary>Длительность записи без пауз — по ней же выравниваются дорожки.</summary>
     public TimeSpan Elapsed => _clock.Elapsed;
+
+    public bool IsPaused { get; private set; }
+
+    /// <summary>
+    /// Пауза: звук с устройств выбрасывается, а общие часы стоят — в файлах паузы просто нет,
+    /// и дорожки после неё продолжают совпадать по времени.
+    /// </summary>
+    public void Pause()
+    {
+        if (IsPaused || _disposed) return;
+        IsPaused = _mic.Paused = _system.Paused = true;
+        _clock.Stop();
+        Log.Write($"Запись на паузе: {Elapsed:hh\\:mm\\:ss}");
+    }
+
+    public void Resume()
+    {
+        if (!IsPaused || _disposed) return;
+        _clock.Start();
+        IsPaused = _mic.Paused = _system.Paused = false;
+        Log.Write("Запись продолжена");
+    }
 
     public void Dispose()
     {
@@ -80,6 +103,8 @@ public sealed class CallRecorder : IDisposable
 
         public float Level { get; private set; }
 
+        public volatile bool Paused;
+
         public Track(string path, WaveFormat format, Stopwatch clock)
         {
             _format = format;
@@ -90,6 +115,7 @@ public sealed class CallRecorder : IDisposable
 
         public void Append(byte[] buffer, int count)
         {
+            if (Paused) { Level = 0; return; }
             lock (_gate)
             {
                 if (_writer == null) return;

@@ -84,6 +84,7 @@ public partial class SettingsWindow : System.Windows.Window
     void Load(Config c)
     {
         AutoRecordCheck.IsChecked = c.AutoRecord;
+        WidgetCheck.IsChecked = c.ShowRecordingWidget;
         OutputDirBox.Text = c.OutputDir;
         CompressCheck.IsChecked = c.CompressAudio;
         UpdateWavInfo(c.OutputPath);
@@ -121,6 +122,7 @@ public partial class SettingsWindow : System.Windows.Window
     {
         var c = _host.Current.Clone();
         c.AutoRecord = AutoRecordCheck.IsChecked == true;
+        c.ShowRecordingWidget = WidgetCheck.IsChecked == true;
         c.OutputDir = OutputDirBox.Text.Trim();
         c.CompressAudio = CompressCheck.IsChecked == true;
 

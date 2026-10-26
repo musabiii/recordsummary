@@ -1,0 +1,68 @@
+<Window x:Class="RecordSummary.RecordingWidget"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="RecordSummary — запись" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize" SizeToContent="WidthAndHeight" ShowActivated="False"
+        ThemeMode="System">
+    <Window.Resources>
+        <Style x:Key="Icon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="Round" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="34"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="6,0,0,0"/>
+        </Style>
+    </Window.Resources>
+
+    <!-- Отступ — место для тени: окно прозрачное, тень рисуется внутри него -->
+    <Border x:Name="Card" Margin="14" CornerRadius="12" Padding="14,10,10,10" BorderThickness="1"
+            Background="{DynamicResource SolidBackgroundFillColorBaseBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            MouseLeftButtonDown="Card_MouseDown" ToolTip="Перетащите, чтобы переместить">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.22"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Ellipse x:Name="Dot" Width="12" Height="12" Margin="0,0,12,0" VerticalAlignment="Center" Fill="#EB4034"/>
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" MinWidth="104">
+                <TextBlock x:Name="AppText" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" MaxWidth="180" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="TimeText" FontSize="20" FontWeight="SemiBold" FontFamily="Consolas"/>
+            </StackPanel>
+
+            <!-- Уровни: видно, что пишутся обе стороны разговора -->
+            <StackPanel x:Name="Meters" Grid.Column="2" VerticalAlignment="Center" Margin="10,0,6,0">
+                <StackPanel Orientation="Horizontal" ToolTip="Ваш микрофон">
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE720;" FontSize="11" Width="16" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <ProgressBar x:Name="MicMeter" Width="56" Height="4" Maximum="1" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,7,0,0" ToolTip="Собеседники (звук компьютера)">
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE767;" FontSize="11" Width="16" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <ProgressBar x:Name="SystemMeter" Width="56" Height="4" Maximum="1" VerticalAlignment="Center"/>
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="RecordButton" Content="Записать" Margin="10,0,0,0" Style="{DynamicResource AccentButtonStyle}" Click="Record_Click"
+                        ToolTip="Записать звонок и сделать саммари"/>
+                <Button x:Name="PauseButton" Style="{StaticResource Round}" Click="Pause_Click" ToolTip="Пауза" AutomationProperties.Name="Пауза">
+                    <TextBlock x:Name="PauseIcon" Style="{StaticResource Icon}" Text="&#xE769;"/>
+                </Button>
+                <Button x:Name="StopButton" Style="{StaticResource Round}" Click="Stop_Click" ToolTip="Остановить и сделать саммари" AutomationProperties.Name="Остановить">
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE71A;" Foreground="#EB4034"/>
+                </Button>
+                <Button x:Name="CloseButton" Style="{StaticResource Round}" Click="Close_Click" AutomationProperties.Name="Скрыть">
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE711;" FontSize="12"/>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
