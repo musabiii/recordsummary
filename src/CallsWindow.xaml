@@ -166,13 +166,14 @@
                             <RadioButton x:Name="TrackThem" GroupName="Tracks" Content="собеседник" MinWidth="0" Checked="Tracks_Checked"/>
                         </StackPanel>
                     </Grid>
-                    <!-- Карта разговора: кто когда говорил; клик — перемотка -->
-                    <Grid Margin="0,12,0,2">
+                    <!-- Карта разговора: скриншоты, кто когда говорил; клик — перемотка -->
+                    <Grid Margin="0,8,0,2">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="84"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions><RowDefinition Height="16"/><RowDefinition Height="16"/></Grid.RowDefinitions>
-                        <TextBlock Text="Я" Style="{StaticResource Hint}" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Row="1" Text="Собеседник" Style="{StaticResource Hint}" VerticalAlignment="Center"/>
-                        <Canvas x:Name="Timeline" Grid.Column="1" Grid.RowSpan="2" Background="Transparent" ClipToBounds="True" Cursor="Hand"
+                        <Grid.RowDefinitions><RowDefinition Height="14"/><RowDefinition Height="16"/><RowDefinition Height="16"/></Grid.RowDefinitions>
+                        <TextBlock x:Name="ShotsLabel" Text="Снимки" Style="{StaticResource Hint}" FontSize="11" VerticalAlignment="Center" Visibility="Hidden"/>
+                        <TextBlock Grid.Row="1" Text="Я" Style="{StaticResource Hint}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="2" Text="Собеседник" Style="{StaticResource Hint}" VerticalAlignment="Center"/>
+                        <Canvas x:Name="Timeline" Grid.Column="1" Grid.RowSpan="3" Background="Transparent" ClipToBounds="True" Cursor="Hand"
                                 MouseLeftButtonDown="Timeline_MouseDown" MouseMove="Timeline_MouseMove" SizeChanged="Timeline_SizeChanged"/>
                     </Grid>
                     <TextBlock x:Name="PlayerError" Style="{StaticResource Hint}" Margin="0,6,0,0" Visibility="Collapsed"/>
@@ -189,6 +190,11 @@
                 <TabItem Header="Транскрипт">
                     <ScrollViewer x:Name="TranscriptScroll" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="TranscriptPanel" Margin="0,4,12,12" MaxWidth="820" HorizontalAlignment="Left"/>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem x:Name="ShotsTab" Header="Скриншоты" Visibility="Collapsed">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <WrapPanel x:Name="ShotsPanel" Margin="0,4,0,12"/>
                     </ScrollViewer>
                 </TabItem>
             </TabControl>

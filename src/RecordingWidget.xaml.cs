@@ -26,6 +26,7 @@ public partial class RecordingWidget : Window
     /// <summary>"Записать" в режиме предложения.</summary>
     public event Action? RecordRequested;
     public event Action? PauseToggled;
+    public event Action? ScreenshotRequested;
     public event Action? StopRequested;
     /// <summary>Крестик: скрыть плашку (запись при этом продолжается) или отказаться от записи звонка.</summary>
     public event Action? Dismissed;
@@ -70,7 +71,7 @@ public partial class RecordingWidget : Window
         AppText.Text = "Звонок в " + app;
         TimeText.Text = "Записать?";
         TimeText.FontFamily = new System.Windows.Media.FontFamily("Segoe UI");
-        Meters.Visibility = PauseButton.Visibility = StopButton.Visibility = Visibility.Collapsed;
+        Meters.Visibility = ShotButton.Visibility = PauseButton.Visibility = StopButton.Visibility = Visibility.Collapsed;
         RecordButton.Visibility = Visibility.Visible;
         CloseButton.ToolTip = "Не записывать этот звонок";
     }
@@ -80,7 +81,7 @@ public partial class RecordingWidget : Window
         _recorder = recorder;
         _app = app;
         TimeText.FontFamily = new System.Windows.Media.FontFamily("Consolas");
-        Meters.Visibility = PauseButton.Visibility = StopButton.Visibility = Visibility.Visible;
+        Meters.Visibility = ShotButton.Visibility = PauseButton.Visibility = StopButton.Visibility = Visibility.Visible;
         RecordButton.Visibility = Visibility.Collapsed;
         CloseButton.ToolTip = "Скрыть окошко — запись продолжится";
         UpdatePaused();
@@ -116,6 +117,26 @@ public partial class RecordingWidget : Window
 
     // ---------- Кнопки и перетаскивание ----------
 
+    /// <summary>Подтверждение снимка: галочка вместо фотоаппарата и надпись на полторы секунды.</summary>
+    public void ShowShotSaved(int count)
+    {
+        _shotFlash?.Stop();
+        ShotIcon.Text = "";
+        AppText.Text = $"Скриншот {count} сохранён";
+        _shotFlash = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+        _shotFlash.Tick += (_, _) =>
+        {
+            _shotFlash?.Stop();
+            ShotIcon.Text = "";
+            UpdatePaused();   // вернуть "Запись · Zoom" / "Пауза · Zoom"
+        };
+        _shotFlash.Start();
+    }
+
+    DispatcherTimer? _shotFlash;
+
+    void Shot_Click(object sender, RoutedEventArgs e) => ScreenshotRequested?.Invoke();
+
     void Record_Click(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
     void Pause_Click(object sender, RoutedEventArgs e) => PauseToggled?.Invoke();
     void Stop_Click(object sender, RoutedEventArgs e) => StopRequested?.Invoke();
@@ -147,12 +168,18 @@ public partial class RecordingWidget : Window
     // WS_EX_NOACTIVATE: клик по плашке не уводит фокус из Zoom/Teams; WS_EX_TOOLWINDOW: нет в Alt+Tab.
     const int GWL_EXSTYLE = -20, WS_EX_NOACTIVATE = 0x08000000, WS_EX_TOOLWINDOW = 0x00000080;
 
+    // WDA_EXCLUDEFROMCAPTURE (Windows 10 2004+): плашки нет ни в наших скриншотах, ни в демонстрации экрана в Zoom/Teams.
+    const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
+
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int index);
     [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int index, int value);
+    [DllImport("user32.dll")] static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint affinity);
 
     void MakeNoActivate()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
         SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+        if (!SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE))
+            Log.Write("Плашку не удалось скрыть от захвата экрана (нужна Windows 10 2004+) — она будет видна на скриншотах");
     }
 }

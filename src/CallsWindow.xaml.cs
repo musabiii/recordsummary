@@ -45,7 +45,7 @@ public interface ICallsHost
 public partial class CallsWindow : Window
 {
     // Цвета говорящих — те же, что на карте разговора; читаются и в светлой, и в тёмной теме.
-    static readonly Brush MeBrush = Frozen(0x7F, 0x77, 0xDD), ThemBrush = Frozen(0x1D, 0x9E, 0x75);
+    static readonly Brush MeBrush = Frozen(0x7F, 0x77, 0xDD), ThemBrush = Frozen(0x1D, 0x9E, 0x75), ShotBrush = Frozen(0xEF, 0x9F, 0x27);
     static readonly double[] Speeds = [1, 1.25, 1.5, 2];
     static readonly CultureInfo Ru = CultureInfo.GetCultureInfo("ru-RU");
 
@@ -58,6 +58,7 @@ public partial class CallsWindow : Window
     SummaryDoc? _summary;
     CallPlayer? _player;
     List<Utterance> _utterances = [];
+    List<Screenshot> _shots = [];
     Rectangle? _playhead;
     int _current = -1, _ticks;
     string _query = "";
@@ -168,8 +169,10 @@ public partial class CallsWindow : Window
         _utterances = [];
         _utteranceViews.Clear();
         _current = -1;
+        _shots = call != null && call.State != CallState.Recording ? Screenshots.List(call.Folder) : [];
         SummaryPanel.Children.Clear();
         TranscriptPanel.Children.Clear();
+        BuildShots();
         PlayerError.Visibility = Visibility.Collapsed;
         SetPlayIcon(false);
 
@@ -351,14 +354,24 @@ public partial class CallsWindow : Window
 
     void BuildTranscript()
     {
+        TranscriptPanel.Children.Clear();
+        _utteranceViews.Clear();
+        _current = -1;
         if (_utterances.Count == 0)
-        {
             TranscriptPanel.Children.Add(new TextBlock { Text = "В записи не нашлось речи.", Foreground = Res("TextFillColorSecondaryBrush") });
-            return;
+
+        // Скриншоты встают между репликами — в тот момент разговора, когда их сделали.
+        int shot = 0;
+        void ShotsBefore(TimeSpan t)
+        {
+            for (; shot < _shots.Count && _shots[shot].At <= t; shot++)
+                TranscriptPanel.Children.Add(Thumbnail(shot, 280, new Thickness(82, 4, 0, 8)));
         }
+
         for (int i = 0; i < _utterances.Count; i++)
         {
             var u = _utterances[i];
+            ShotsBefore(u.Start);
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
             grid.ColumnDefinitions.Add(new ColumnDefinition());
@@ -384,6 +397,70 @@ public partial class CallsWindow : Window
             _utteranceViews.Add(border);
             TranscriptPanel.Children.Add(border);
         }
+        ShotsBefore(TimeSpan.MaxValue);
+    }
+
+    // ---------- Скриншоты ----------
+
+    void BuildShots()
+    {
+        ShotsPanel.Children.Clear();
+        ShotsTab.Visibility = _shots.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShotsTab.Header = $"Скриншоты · {_shots.Count}";
+        ShotsLabel.Visibility = _shots.Count > 0 ? Visibility.Visible : Visibility.Hidden;
+        for (int i = 0; i < _shots.Count; i++)
+            ShotsPanel.Children.Add(Thumbnail(i, 260, new Thickness(0, 0, 12, 12)));
+    }
+
+    /// <summary>Миниатюра со временем снимка; клик открывает просмотр.</summary>
+    UIElement Thumbnail(int index, double width, Thickness margin)
+    {
+        var shot = _shots[index];
+        var panel = new StackPanel();
+        try
+        {
+            // Уменьшенная копия в памяти: не держит файл и не грузит 4K-картинки целиком ради превью.
+            var img = new System.Windows.Media.Imaging.BitmapImage();
+            img.BeginInit();
+            img.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            img.DecodePixelWidth = (int)(width * 1.5);
+            img.UriSource = new Uri(shot.Path);
+            img.EndInit();
+            img.Freeze();
+            panel.Children.Add(new System.Windows.Controls.Image { Source = img, Width = width, Stretch = Stretch.Uniform });
+        }
+        catch (Exception e) { Log.Write($"Превью скриншота не загрузилось: {e.Message}"); }
+        var caption = new TextBlock { FontSize = 12, Margin = new Thickness(0, 4, 0, 0), Foreground = Res("TextFillColorSecondaryBrush") };
+        caption.Inlines.Add(new Run("  ") { FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets") });
+        caption.Inlines.Add(new Run(Clock(shot.At)) { FontFamily = new System.Windows.Media.FontFamily("Consolas") });
+        panel.Children.Add(caption);
+
+        // Кнопка, а не рамка: открывается и с клавиатуры (Tab, Enter), видна экранному диктору.
+        var button = new Button
+        {
+            Content = panel, Margin = margin, Padding = new Thickness(6), HorizontalAlignment = HorizontalAlignment.Left,
+            Cursor = System.Windows.Input.Cursors.Hand, ToolTip = "Открыть скриншот",
+        };
+        System.Windows.Automation.AutomationProperties.SetName(button, "Скриншот " + Clock(shot.At));
+        button.Click += (_, _) => OpenShot(index);
+        return button;
+    }
+
+    void OpenShot(int index)
+    {
+        var viewer = new ScreenshotViewer(_shots.ToList(), index, at => Seek(at, play: true)) { Owner = this };
+        viewer.Deleted += RefreshShots;
+        viewer.Show();
+    }
+
+    /// <summary>После удаления скриншота: перечитать список и всё, где он показан.</summary>
+    void RefreshShots()
+    {
+        if (_call == null) return;
+        _shots = Screenshots.List(_call.Folder);
+        BuildShots();
+        BuildTranscript();
+        DrawTimeline();
     }
 
     // ---------- Плеер ----------
@@ -491,8 +568,10 @@ public partial class CallsWindow : Window
         double w = Timeline.ActualWidth, total = (_player?.Duration ?? _call?.Duration ?? TimeSpan.Zero).TotalSeconds;
         if (w <= 0 || total <= 0) return;
 
+        // Сверху строка скриншотов (14 px), под ней дорожки "Я" и "Собеседник".
+        const double meY = 17, themY = 33;
         // Подложки дорожек, чтобы было видно, куда кликать, даже на тишине.
-        foreach (var y in new[] { 3.0, 19.0 })
+        foreach (var y in new[] { meY, themY })
         {
             var lane = new Rectangle { Width = w, Height = 10, RadiusX = 2, RadiusY = 2, Fill = Res("SubtleFillColorSecondaryBrush") };
             Canvas.SetTop(lane, y);
@@ -506,10 +585,24 @@ public partial class CallsWindow : Window
                 Fill = u.Speaker == Transcript.Me ? MeBrush : ThemBrush,
             };
             Canvas.SetLeft(r, u.Start.TotalSeconds / total * w);
-            Canvas.SetTop(r, u.Speaker == Transcript.Me ? 3 : 19);
+            Canvas.SetTop(r, u.Speaker == Transcript.Me ? meY : themY);
             Timeline.Children.Add(r);
         }
-        _playhead = new Rectangle { Width = 2, Height = 32, Fill = Res("TextFillColorPrimaryBrush") };
+        for (int i = 0; i < _shots.Count; i++)
+        {
+            int index = i;
+            var mark = new Rectangle
+            {
+                Width = 8, Height = 10, RadiusX = 2, RadiusY = 2, Fill = ShotBrush,
+                ToolTip = $"Скриншот {Clock(_shots[i].At)} — открыть",
+            };
+            Canvas.SetLeft(mark, Math.Min(w - 8, _shots[i].At.TotalSeconds / total * w - 4));
+            Canvas.SetTop(mark, 2);
+            // Клик по метке открывает снимок, а не перематывает (обработчик карты — на Canvas, ниже по всплытию).
+            mark.MouseLeftButtonDown += (_, e) => { e.Handled = true; OpenShot(index); };
+            Timeline.Children.Add(mark);
+        }
+        _playhead = new Rectangle { Width = 2, Height = 46, Fill = Res("TextFillColorPrimaryBrush"), IsHitTestVisible = false };
         Timeline.Children.Add(_playhead);
         Tick();
     }
@@ -526,6 +619,7 @@ public partial class CallsWindow : Window
     void Timeline_MouseMove(object sender, MouseEventArgs e)
     {
         var t = TimelineTime(e);
+        if (e.OriginalSource is Rectangle { ToolTip: not null }) return;   // над меткой скриншота — её собственная подсказка
         var u = _utterances.LastOrDefault(x => x.Start <= t && t <= x.End);
         Timeline.ToolTip = u == null ? Clock(t) : $"{Clock(t)} · {u.Speaker}: {Shorten(u.Text, 90)}";
     }
