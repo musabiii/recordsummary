@@ -203,6 +203,8 @@ public partial class RecordingWidget : Window
     {
         var hwnd = new WindowInteropHelper(this).Handle;
         SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+        // Для скриншотов документации: RECORDSUMMARY_SHOW_IN_CAPTURE=1 оставляет плашку видимой для захвата экрана.
+        if (Environment.GetEnvironmentVariable("RECORDSUMMARY_SHOW_IN_CAPTURE") == "1") return;
         if (!SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE))
             Log.Write("Плашку не удалось скрыть от захвата экрана (нужна Windows 10 2004+) — она будет видна на скриншотах");
     }

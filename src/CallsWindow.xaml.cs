@@ -634,8 +634,10 @@ public partial class CallsWindow : Window
         _videoReady = _videoPlaying = false;
     }
 
-    void VideoToggle_Click(object sender, RoutedEventArgs e)
+    // Checked/Unchecked, а не Click: Click не приходит при переключении через экранный диктор и UI Automation.
+    void VideoToggle_Changed(object sender, RoutedEventArgs e)
     {
+        if (VideoPanel == null) return;   // вызывается ещё из InitializeComponent
         bool show = VideoToggle.IsChecked == true && _videos.Count > 0;
         VideoPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         if (!show) CloseVideo();

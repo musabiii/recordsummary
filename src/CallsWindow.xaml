@@ -167,7 +167,7 @@
                         </Button>
                         <TextBlock x:Name="TimeText" Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" FontFamily="Consolas" FontSize="13"/>
                         <ToggleButton x:Name="VideoToggle" Grid.Column="2" HorizontalAlignment="Right" Margin="0,0,12,0" IsChecked="True"
-                                      Visibility="Collapsed" Click="VideoToggle_Click" ToolTip="Показать или скрыть видео экрана">
+                                      Visibility="Collapsed" Checked="VideoToggle_Changed" Unchecked="VideoToggle_Changed" ToolTip="Показать или скрыть видео экрана">
                             <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE714;" Margin="0,0,8,0"/><TextBlock Text="Видео"/></StackPanel>
                         </ToggleButton>
                         <ComboBox x:Name="SpeedCombo" Grid.Column="3" Width="86" VerticalAlignment="Center" SelectionChanged="Speed_SelectionChanged" ToolTip="Скорость"/>
