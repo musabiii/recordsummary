@@ -27,6 +27,27 @@ public partial class RecordingWidget : Window
     public event Action? RecordRequested;
     public event Action? PauseToggled;
     public event Action? ScreenshotRequested;
+    public event Action? VideoToggled;
+
+    bool _video, _videoAvailable = true;
+
+    /// <summary>"off" в настройках — кнопки видео нет.</summary>
+    public bool VideoAvailable
+    {
+        get => _videoAvailable;
+        set { _videoAvailable = value; if (_recorder != null) VideoButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed; }
+    }
+
+    /// <summary>Идёт ли запись видео: красный значок на кнопке и "· видео" в подписи.</summary>
+    public void SetVideo(bool on, string? source = null)
+    {
+        _video = on;
+        if (on) VideoIcon.Foreground = Red;
+        else VideoIcon.ClearValue(System.Windows.Controls.TextBlock.ForegroundProperty);   // цвет текста темы
+        VideoButton.ToolTip = on ? $"Остановить видео ({source})" : "Записывать видео окна звонка";
+        System.Windows.Automation.AutomationProperties.SetName(VideoButton, on ? "Остановить видео" : "Видео");
+        UpdatePaused();
+    }
     public event Action? StopRequested;
     /// <summary>Крестик: скрыть плашку (запись при этом продолжается) или отказаться от записи звонка.</summary>
     public event Action? Dismissed;
@@ -71,7 +92,7 @@ public partial class RecordingWidget : Window
         AppText.Text = "Звонок в " + app;
         TimeText.Text = "Записать?";
         TimeText.FontFamily = new System.Windows.Media.FontFamily("Segoe UI");
-        Meters.Visibility = ShotButton.Visibility = PauseButton.Visibility = StopButton.Visibility = Visibility.Collapsed;
+        Meters.Visibility = VideoButton.Visibility = ShotButton.Visibility = PauseButton.Visibility = StopButton.Visibility = Visibility.Collapsed;
         RecordButton.Visibility = Visibility.Visible;
         CloseButton.ToolTip = "Не записывать этот звонок";
     }
@@ -82,6 +103,7 @@ public partial class RecordingWidget : Window
         _app = app;
         TimeText.FontFamily = new System.Windows.Media.FontFamily("Consolas");
         Meters.Visibility = ShotButton.Visibility = PauseButton.Visibility = StopButton.Visibility = Visibility.Visible;
+        VideoButton.Visibility = _videoAvailable ? Visibility.Visible : Visibility.Collapsed;
         RecordButton.Visibility = Visibility.Collapsed;
         CloseButton.ToolTip = "Скрыть окошко — запись продолжится";
         UpdatePaused();
@@ -97,7 +119,7 @@ public partial class RecordingWidget : Window
         Dot.Fill = paused ? Gray : Red;
         if (paused) { _pulse.Stop(); Dot.Opacity = 1; }
         else _pulse.Begin();
-        AppText.Text = (paused ? "Пауза · " : "Запись · ") + _app;
+        AppText.Text = (paused ? "Пауза · " : "Запись · ") + (_video ? "видео · " : "") + _app;
         PauseIcon.Text = paused ? "" : "";
         PauseButton.ToolTip = paused ? "Продолжить запись" : "Пауза";
         System.Windows.Automation.AutomationProperties.SetName(PauseButton, paused ? "Продолжить" : "Пауза");
@@ -136,6 +158,8 @@ public partial class RecordingWidget : Window
     DispatcherTimer? _shotFlash;
 
     void Shot_Click(object sender, RoutedEventArgs e) => ScreenshotRequested?.Invoke();
+
+    void Video_Click(object sender, RoutedEventArgs e) => VideoToggled?.Invoke();
 
     void Record_Click(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
     void Pause_Click(object sender, RoutedEventArgs e) => PauseToggled?.Invoke();

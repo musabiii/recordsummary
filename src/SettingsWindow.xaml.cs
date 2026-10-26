@@ -48,6 +48,24 @@ public partial class SettingsWindow : System.Windows.Window
         new("32768", "32K — до ~80 мин"),
     ];
 
+    static readonly Option[] VideoModes =
+    [
+        new("button", "По кнопке в окошке записи"),
+        new("always", "Всегда вместе со звуком"),
+        new("off", "Не записывать"),
+    ];
+
+    static readonly Option[] VideoSources = [new("window", "Окно звонка"), new("screen", "Весь монитор")];
+
+    // Высота и частота кадров одной строкой: так проще выбрать, чем два отдельных списка.
+    static readonly Option[] VideoQualities =
+    [
+        new("720/10", "720p, 10 к/с — экономно"),
+        new("1080/15", "1080p, 15 к/с — для слайдов"),
+        new("1080/30", "1080p, 30 к/с — плавно"),
+        new("1440/15", "1440p, 15 к/с — мелкий текст"),
+    ];
+
     const string Custom = "";
     static readonly Option[] ApiPresets =
     [
@@ -87,6 +105,12 @@ public partial class SettingsWindow : System.Windows.Window
         WidgetCheck.IsChecked = c.ShowRecordingWidget;
         OutputDirBox.Text = c.OutputDir;
         CompressCheck.IsChecked = c.CompressAudio;
+        Select(VideoModeCombo, VideoModes.ToList(), c.VideoMode);
+        Select(VideoSourceCombo, VideoSources.ToList(), c.VideoSource);
+        var qualities = VideoQualities.ToList();
+        var quality = $"{c.VideoMaxHeight}/{c.VideoFramerate}";
+        if (qualities.All(q => q.Value != quality)) qualities.Add(new(quality, $"{c.VideoMaxHeight}p, {c.VideoFramerate} к/с"));
+        Select(VideoQualityCombo, qualities, quality);
         UpdateWavInfo(c.OutputPath);
         AutostartCheck.IsChecked = _host.Autostart;
 
@@ -125,6 +149,13 @@ public partial class SettingsWindow : System.Windows.Window
         c.ShowRecordingWidget = WidgetCheck.IsChecked == true;
         c.OutputDir = OutputDirBox.Text.Trim();
         c.CompressAudio = CompressCheck.IsChecked == true;
+        c.VideoMode = Value(VideoModeCombo) ?? c.VideoMode;
+        c.VideoSource = Value(VideoSourceCombo) ?? c.VideoSource;
+        if (Value(VideoQualityCombo)?.Split('/') is [var height, var fps])
+        {
+            c.VideoMaxHeight = int.Parse(height);
+            c.VideoFramerate = int.Parse(fps);
+        }
 
         c.StartDelaySeconds = (int)StartDelaySlider.Value;
         c.StopDelaySeconds = (int)StopDelaySlider.Value;

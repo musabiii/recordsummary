@@ -148,6 +148,14 @@
             <!-- Плеер -->
             <Border x:Name="PlayerCard" Grid.Row="1" Style="{StaticResource Card}" Margin="0,14,0,10">
                 <StackPanel>
+                    <!-- Видео экрана: идёт вместе со звуком; вне записанных фрагментов — подсказка -->
+                    <Grid x:Name="VideoPanel" Height="320" Margin="0,0,0,12" Background="Black" Visibility="Collapsed"
+                          MouseLeftButtonDown="VideoPanel_MouseDown" ToolTip="Дважды щёлкните, чтобы открыть фрагмент в проигрывателе">
+                        <MediaElement x:Name="VideoView" LoadedBehavior="Manual" UnloadedBehavior="Manual" IsMuted="True" ScrubbingEnabled="True"
+                                      Stretch="Uniform" MediaOpened="Video_MediaOpened" MediaFailed="Video_MediaFailed"/>
+                        <TextBlock x:Name="VideoHint" Foreground="#B0B0B0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="24"/>
+                    </Grid>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition/>
@@ -158,6 +166,10 @@
                             <TextBlock x:Name="PlayIcon" Style="{StaticResource Icon}" FontSize="16" Text="&#xE768;" HorizontalAlignment="Center"/>
                         </Button>
                         <TextBlock x:Name="TimeText" Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" FontFamily="Consolas" FontSize="13"/>
+                        <ToggleButton x:Name="VideoToggle" Grid.Column="2" HorizontalAlignment="Right" Margin="0,0,12,0" IsChecked="True"
+                                      Visibility="Collapsed" Click="VideoToggle_Click" ToolTip="Показать или скрыть видео экрана">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE714;" Margin="0,0,8,0"/><TextBlock Text="Видео"/></StackPanel>
+                        </ToggleButton>
                         <ComboBox x:Name="SpeedCombo" Grid.Column="3" Width="86" VerticalAlignment="Center" SelectionChanged="Speed_SelectionChanged" ToolTip="Скорость"/>
                         <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
                             <TextBlock Text="Слушать:" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -170,7 +182,7 @@
                     <Grid Margin="0,8,0,2">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="84"/><ColumnDefinition/></Grid.ColumnDefinitions>
                         <Grid.RowDefinitions><RowDefinition Height="14"/><RowDefinition Height="16"/><RowDefinition Height="16"/></Grid.RowDefinitions>
-                        <TextBlock x:Name="ShotsLabel" Text="Снимки" Style="{StaticResource Hint}" FontSize="11" VerticalAlignment="Center" Visibility="Hidden"/>
+                        <TextBlock x:Name="ShotsLabel" Text="Экран" Style="{StaticResource Hint}" FontSize="11" VerticalAlignment="Center" Visibility="Hidden"/>
                         <TextBlock Grid.Row="1" Text="Я" Style="{StaticResource Hint}" VerticalAlignment="Center"/>
                         <TextBlock Grid.Row="2" Text="Собеседник" Style="{StaticResource Hint}" VerticalAlignment="Center"/>
                         <Canvas x:Name="Timeline" Grid.Column="1" Grid.RowSpan="3" Background="Transparent" ClipToBounds="True" Cursor="Hand"

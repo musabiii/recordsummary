@@ -45,7 +45,8 @@ public interface ICallsHost
 public partial class CallsWindow : Window
 {
     // Цвета говорящих — те же, что на карте разговора; читаются и в светлой, и в тёмной теме.
-    static readonly Brush MeBrush = Frozen(0x7F, 0x77, 0xDD), ThemBrush = Frozen(0x1D, 0x9E, 0x75), ShotBrush = Frozen(0xEF, 0x9F, 0x27);
+    static readonly Brush MeBrush = Frozen(0x7F, 0x77, 0xDD), ThemBrush = Frozen(0x1D, 0x9E, 0x75), ShotBrush = Frozen(0xEF, 0x9F, 0x27),
+        VideoBrush = Frozen(0x37, 0x8A, 0xDD);
     static readonly double[] Speeds = [1, 1.25, 1.5, 2];
     static readonly CultureInfo Ru = CultureInfo.GetCultureInfo("ru-RU");
 
@@ -59,6 +60,9 @@ public partial class CallsWindow : Window
     CallPlayer? _player;
     List<Utterance> _utterances = [];
     List<Screenshot> _shots = [];
+    List<VideoSegment> _videos = [];
+    VideoSegment? _videoSeg;      // фрагмент, открытый в VideoView
+    bool _videoReady, _videoPlaying;
     Rectangle? _playhead;
     int _current = -1, _ticks;
     string _query = "";
@@ -92,6 +96,7 @@ public partial class CallsWindow : Window
             _host.CallsChanged -= OnCallsChanged;
             _timer.Stop();
             _player?.Dispose();
+            CloseVideo();
         };
 
         Reload(select);
@@ -102,6 +107,7 @@ public partial class CallsWindow : Window
     {
         _player?.Dispose();
         _player = null;
+        CloseVideo();
         SetPlayIcon(false);
         PlayerCard.Visibility = Visibility.Collapsed;
     }
@@ -170,9 +176,13 @@ public partial class CallsWindow : Window
         _utteranceViews.Clear();
         _current = -1;
         _shots = call != null && call.State != CallState.Recording ? Screenshots.List(call.Folder) : [];
+        _videos = call != null && call.State != CallState.Recording ? Videos.List(call.Folder) : [];
+        CloseVideo();
         SummaryPanel.Children.Clear();
         TranscriptPanel.Children.Clear();
         BuildShots();
+        VideoToggle.Visibility = _videos.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        VideoPanel.Visibility = _videos.Count > 0 && VideoToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PlayerError.Visibility = Visibility.Collapsed;
         SetPlayIcon(false);
 
@@ -407,7 +417,7 @@ public partial class CallsWindow : Window
         ShotsPanel.Children.Clear();
         ShotsTab.Visibility = _shots.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         ShotsTab.Header = $"Скриншоты · {_shots.Count}";
-        ShotsLabel.Visibility = _shots.Count > 0 ? Visibility.Visible : Visibility.Hidden;
+        ShotsLabel.Visibility = _shots.Count > 0 || _videos.Count > 0 ? Visibility.Visible : Visibility.Hidden;
         for (int i = 0; i < _shots.Count; i++)
             ShotsPanel.Children.Add(Thumbnail(i, 260, new Thickness(0, 0, 12, 12)));
     }
@@ -537,6 +547,7 @@ public partial class CallsWindow : Window
         var pos = _player.Position;
         if (_playhead != null && Timeline.ActualWidth > 0)
             Canvas.SetLeft(_playhead, pos.TotalSeconds / Math.Max(1, _player.Duration.TotalSeconds) * Timeline.ActualWidth - 1);
+        SyncVideo(pos, _player.IsPlaying);
         if (!_player.IsPlaying && PlayIcon.Text == "") SetPlayIcon(false);
 
         // Подсветка текущей реплики в транскрипте.
@@ -547,6 +558,95 @@ public partial class CallsWindow : Window
         if (idx < 0) return;
         _utteranceViews[idx].Background = Res("SubtleFillColorSecondaryBrush");
         if (_player.IsPlaying && Tabs.SelectedIndex == 1) _utteranceViews[idx].BringIntoView();
+    }
+
+    // ---------- Видео ----------
+
+    /// <summary>
+    /// Видео ведёт звук: позиция берётся из плеера звука, видео подтягивается к ней. Вне фрагментов — подсказка.
+    /// Частота кадров переменная, и после последнего изменения картинки кадров нет — тогда держим последний кадр.
+    /// </summary>
+    void SyncVideo(TimeSpan pos, bool playing)
+    {
+        if (_videos.Count == 0 || VideoPanel.Visibility != Visibility.Visible) return;
+
+        var seg = _videos.FirstOrDefault(v => v.Contains(pos));
+        if (seg == null)
+        {
+            if (_videoSeg != null) CloseVideo();
+            VideoView.Visibility = Visibility.Hidden;
+            var next = _videos.FirstOrDefault(v => v.Start > pos);
+            VideoHint.Text = "В этот момент видео не записывалось" + (next != null ? $"\nследующий фрагмент — с {Clock(next.Start)}" : "");
+            return;
+        }
+        if (seg != _videoSeg)
+        {
+            CloseVideo();
+            _videoSeg = seg;
+            VideoView.Source = new Uri(seg.Path);
+            VideoView.Pause();   // открыть файл, не запуская; дальше MediaOpened
+            VideoHint.Text = "Загрузка видео…";
+            return;
+        }
+        if (!_videoReady) return;
+
+        VideoView.Visibility = Visibility.Visible;
+        VideoHint.Text = "";
+        var natural = VideoView.NaturalDuration.HasTimeSpan ? VideoView.NaturalDuration.TimeSpan : seg.Duration;
+        var target = pos - seg.Start;
+        bool beyond = target >= natural;
+        if (beyond) target = natural - TimeSpan.FromMilliseconds(50);
+
+        if (playing && !beyond)
+        {
+            if (Math.Abs(VideoView.SpeedRatio - _player!.Tempo) > 0.01) VideoView.SpeedRatio = _player.Tempo;
+            if (!_videoPlaying) { VideoView.Play(); _videoPlaying = true; }
+            // Небольшое расхождение не трогаем: частая перемотка видео заметнее, чем 0,3 с рассинхрона.
+            if ((VideoView.Position - target).Duration() > TimeSpan.FromMilliseconds(350)) VideoView.Position = target;
+        }
+        else
+        {
+            if (_videoPlaying) { VideoView.Pause(); _videoPlaying = false; }
+            if ((VideoView.Position - target).Duration() > TimeSpan.FromMilliseconds(100)) VideoView.Position = target;
+        }
+    }
+
+    void Video_MediaOpened(object sender, RoutedEventArgs e)
+    {
+        _videoReady = true;
+        if (_player != null) SyncVideo(_player.Position, _player.IsPlaying);
+    }
+
+    void Video_MediaFailed(object sender, ExceptionRoutedEventArgs e)
+    {
+        Log.Write($"Видео не открылось ({_videoSeg?.Path}): {e.ErrorException?.Message}");
+        VideoView.Visibility = Visibility.Hidden;
+        VideoHint.Text = "Не удалось открыть видео: " + e.ErrorException?.Message;
+    }
+
+    /// <summary>Отпустить файл видео (перед удалением звонка и при смене звонка).</summary>
+    void CloseVideo()
+    {
+        VideoView.Stop();
+        VideoView.Close();
+        VideoView.Source = null;
+        _videoSeg = null;
+        _videoReady = _videoPlaying = false;
+    }
+
+    void VideoToggle_Click(object sender, RoutedEventArgs e)
+    {
+        bool show = VideoToggle.IsChecked == true && _videos.Count > 0;
+        VideoPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (!show) CloseVideo();
+        else if (_player != null) SyncVideo(_player.Position, _player.IsPlaying);
+    }
+
+    void VideoPanel_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount != 2) return;
+        var seg = _videoSeg ?? (_player != null ? _videos.FirstOrDefault(v => v.Contains(_player.Position)) : null) ?? _videos.FirstOrDefault();
+        if (seg != null) Shell(seg.Path);
     }
 
     void UpdateTime()
@@ -568,8 +668,19 @@ public partial class CallsWindow : Window
         double w = Timeline.ActualWidth, total = (_player?.Duration ?? _call?.Duration ?? TimeSpan.Zero).TotalSeconds;
         if (w <= 0 || total <= 0) return;
 
-        // Сверху строка скриншотов (14 px), под ней дорожки "Я" и "Собеседник".
+        // Сверху строка "Экран" (14 px): фрагменты видео и метки скриншотов; под ней дорожки "Я" и "Собеседник".
         const double meY = 17, themY = 33;
+        foreach (var v in _videos)
+        {
+            var bar = new Rectangle
+            {
+                Width = Math.Max(3, v.Duration.TotalSeconds / total * w), Height = 6, RadiusX = 2, RadiusY = 2, Fill = VideoBrush,
+                ToolTip = $"Видео {Clock(v.Start)}–{Clock(v.End)}",
+            };
+            Canvas.SetLeft(bar, v.Start.TotalSeconds / total * w);
+            Canvas.SetTop(bar, 4);
+            Timeline.Children.Add(bar);
+        }
         // Подложки дорожек, чтобы было видно, куда кликать, даже на тишине.
         foreach (var y in new[] { meY, themY })
         {

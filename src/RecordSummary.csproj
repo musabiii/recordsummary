@@ -10,6 +10,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- ScreenRecorderLib — нативная сборка C++/CLI, её DLL выбирается по Platform (AnyCPU не подходит).
+         Путь вывода без платформы, чтобы exe остался в bin\<Configuration>\… (на него ссылается автозапуск). -->
+    <Platform>x64</Platform>
+    <Platforms>x64</Platforms>
+    <AppendPlatformToOutputPath>false</AppendPlatformToOutputPath>
     <SelfContained>false</SelfContained>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>RecordSummary</AssemblyName>
@@ -25,6 +30,7 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="ScreenRecorderLib" Version="7.0.1" />
     <PackageReference Include="SoundTouch.Net" Version="2.3.2" />
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />

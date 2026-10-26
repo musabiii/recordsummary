@@ -130,6 +130,32 @@
 
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource Label}" Text="Видео экрана"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="Картинка пишется отдельно от звука и синхронно с ним: в окне «Записи» видно, что было на экране в любой момент разговора. Час видео 1080p — примерно 0,3–1 ГБ, на статичной картинке меньше."/>
+                                </StackPanel>
+                                <ComboBox x:Name="VideoModeCombo" Grid.Column="1" Width="240" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource Label}" Text="Что снимать"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="Окно звонка пишется, даже если его перекрыть другим окном. Для звонков в браузере и в Teams из Microsoft Store снимается монитор."/>
+                                </StackPanel>
+                                <ComboBox x:Name="VideoSourceCombo" Grid.Column="1" Width="240" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock Style="{StaticResource Label}" Text="Качество" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="VideoQualityCombo" Grid.Column="1" Width="240" VerticalAlignment="Center"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
                             <CheckBox x:Name="CompressCheck" Content="Сжимать записи после распознавания"/>
                             <TextBlock Style="{StaticResource Hint}" Margin="28,2,0,0" Text="Каждая дорожка — в моно MP3: час звонка займёт около 60 МБ вместо ~4 ГБ. Для прослушивания и повторного распознавания качества хватает."/>
                             <Grid Margin="28,10,0,0">

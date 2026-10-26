@@ -64,20 +64,30 @@ public sealed class CallDetector : IDisposable
         set { _cfg = value; _timer.Interval = value.PollMs; }
     }
 
+    /// <summary>Путь к exe (или имя пакета) приложения текущего звонка — по нему видео находит окно звонка.</summary>
+    public string? ActiveCallKey { get; private set; }
+
     /// <summary>Первое приложение для звонков, которое сейчас держит микрофон.</summary>
-    public static string? FindCallApp(Config cfg)
+    public static string? FindCallApp(Config cfg) => FindCall(cfg)?.Name;
+
+    static (string Name, string Key)? FindCall(Config cfg)
     {
         foreach (var user in MicUsers.Active())
             foreach (var (pattern, name) in cfg.CallApps)
                 if (user.Contains(pattern, StringComparison.OrdinalIgnoreCase))
-                    return name;
+                    return (name, user);
         return null;
     }
 
     void Tick()
     {
         string? app;
-        try { app = FindCallApp(_cfg); }
+        try
+        {
+            var call = FindCall(_cfg);
+            app = call?.Name;
+            if (call != null && (ActiveCall == null || call.Value.Name == ActiveCall)) ActiveCallKey = call.Value.Key;
+        }
         catch (Exception e) { Log.Write($"Детектор: {e.Message}"); return; }
         var now = DateTime.UtcNow;
 

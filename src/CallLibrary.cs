@@ -108,6 +108,7 @@ public sealed class CallRecord : System.ComponentModel.INotifyPropertyChanged
     public string Title { get; set; } = "";
     public int TaskCount { get; init; }
     public int ShotCount { get; init; }
+    public bool HasVideo { get; init; }
     public string? Error { get; init; }
     public CallState State { get; set; }
     /// <summary>Ход обработки для звонка в состоянии Processing.</summary>
@@ -139,7 +140,7 @@ public sealed class CallRecord : System.ComponentModel.INotifyPropertyChanged
         CallState.Failed => "Не удалось обработать",
         CallState.NotProcessed => $"{FormatDuration(Duration)} · не обработан",
         _ when Error != null => $"{FormatDuration(Duration)} · саммари не получилось",
-        _ => FormatDuration(Duration) + (TaskCount > 0 ? $" · задач: {TaskCount}" : "") + (ShotCount > 0 ? $" · снимков: {ShotCount}" : ""),
+        _ => FormatDuration(Duration) + (HasVideo ? " · видео" : "") + (TaskCount > 0 ? $" · задач: {TaskCount}" : "") + (ShotCount > 0 ? $" · снимков: {ShotCount}" : ""),
     };
 
     public static string FormatDuration(TimeSpan t) =>
@@ -192,6 +193,7 @@ public sealed class CallRecord : System.ComponentModel.INotifyPropertyChanged
             Title = title,
             TaskCount = summary?.TaskCount ?? 0,
             ShotCount = Screenshots.Count(folder),
+            HasVideo = Videos.List(folder).Count > 0,
             Error = error,
             // Транскрипт есть, а саммари упало — звонок всё равно можно читать и слушать.
             State = transcribed ? CallState.Done : error != null ? CallState.Failed : CallState.NotProcessed,

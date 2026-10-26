@@ -53,6 +53,10 @@
             <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                 <Button x:Name="RecordButton" Content="Записать" Margin="10,0,0,0" Style="{DynamicResource AccentButtonStyle}" Click="Record_Click"
                         ToolTip="Записать звонок и сделать саммари"/>
+                <Button x:Name="VideoButton" Style="{StaticResource Round}" Click="Video_Click" AutomationProperties.Name="Видео"
+                        ToolTip="Записывать видео окна звонка">
+                    <TextBlock x:Name="VideoIcon" Style="{StaticResource Icon}" Text="&#xE714;"/>
+                </Button>
                 <Button x:Name="ShotButton" Style="{StaticResource Round}" Click="Shot_Click" AutomationProperties.Name="Скриншот"
                         ToolTip="Скриншот экрана со звонком — сохранится в запись с привязкой ко времени">
                     <TextBlock x:Name="ShotIcon" Style="{StaticResource Icon}" Text="&#xE722;"/>

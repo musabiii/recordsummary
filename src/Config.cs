@@ -19,6 +19,17 @@ public sealed class Config
     public double? WidgetLeft { get; set; }
     public double? WidgetTop { get; set; }
 
+    /// <summary>Видео экрана: "off" — нет кнопки, "button" — по кнопке в плашке, "always" — вместе с каждой записью.</summary>
+    public string VideoMode { get; set; } = "button";
+
+    /// <summary>"window" — окно приложения звонка (если не нашлось — монитор), "screen" — монитор с окном в фокусе.</summary>
+    public string VideoSource { get; set; } = "window";
+
+    public int VideoFramerate { get; set; } = 15;
+
+    /// <summary>Больше — уменьшается до этой высоты: 1080p читаемо и вдвое легче 4K.</summary>
+    public int VideoMaxHeight { get; set; } = 1080;
+
     /// <summary>Сколько приложение должно держать микрофон, чтобы считать это звонком (отсекает голосовой поиск и т.п.).</summary>
     public int StartDelaySeconds { get; set; } = 3;
 
