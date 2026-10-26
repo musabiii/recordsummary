@@ -46,7 +46,7 @@ public sealed class ApiLlm : ILlm
         using var response = await _http.PostAsJsonAsync("chat/completions", request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"{_cfg.ApiBaseUrl}: {(int)response.StatusCode} {Truncate(body)}");
+            throw new HttpRequestException($"{new Uri(_cfg.ApiBaseUrl).Host} ответил {(int)response.StatusCode}: {ErrorMessage(body)}");
 
         var json = JsonNode.Parse(body);
         // OpenRouter может вернуть 200 с ошибкой провайдера внутри.
@@ -63,6 +63,19 @@ public sealed class ApiLlm : ILlm
     {
         var json = JsonNode.Parse(await _http.GetStringAsync("models", ct));
         return json?["data"]?.AsArray().Select(m => m?["id"]?.GetValue<string>()).OfType<string>().Order().ToList() ?? [];
+    }
+
+    /// <summary>Текст ошибки из {"error":{"message":…}} (OpenAI, OpenRouter, Ollama), иначе начало ответа как есть.</summary>
+    static string ErrorMessage(string body)
+    {
+        try
+        {
+            var error = JsonNode.Parse(body)?["error"];
+            var message = error is JsonValue ? error.GetValue<string>() : error?["message"]?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(message)) return message;
+        }
+        catch { }
+        return Truncate(body);
     }
 
     static string Truncate(string s) => s.Length > 500 ? s[..500] + "…" : s;

@@ -15,11 +15,11 @@ static class Program
         if (args.Length == 2 && args[0] == "--process")
             return Process(args[1]).GetAwaiter().GetResult();
 
-        using var mutex = new Mutex(true, @"Local\RecordSummary.SingleInstance", out bool first);
+        using var mutex = new Mutex(true, @"Local\RecordSummary.SingleInstance" + TrayApp.InstanceSuffix, out bool first);
         if (!first)
         {
-            // Уже запущено: повторный запуск открывает настройки работающего экземпляра.
-            try { using var show = EventWaitHandle.OpenExisting(TrayApp.ShowSettingsEvent); show.Set(); } catch { }
+            // Уже запущено: повторный запуск открывает окно записей работающего экземпляра.
+            try { using var show = EventWaitHandle.OpenExisting(TrayApp.ShowWindowEvent); show.Set(); } catch { }
             return 0;
         }
 

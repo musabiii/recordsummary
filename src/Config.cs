@@ -20,6 +20,9 @@ public sealed class Config
 
     public int PollMs { get; set; } = 1000;
 
+    /// <summary>После распознавания сжимать дорожки в MP3: час звонка ~60 МБ вместо ~4 ГБ wav.</summary>
+    public bool CompressAudio { get; set; } = true;
+
     /// <summary>Папка для записей; пусто — Документы\RecordSummary.</summary>
     public string OutputDir { get; set; } = "";
 

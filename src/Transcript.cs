@@ -1,4 +1,7 @@
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace RecordSummary;
 
@@ -6,6 +9,38 @@ namespace RecordSummary;
 public static class Transcript
 {
     public const string Me = "Я", Them = "Собеседник";
+
+    /// <summary>Реплики с началом и концом — для окна записей (карта разговора, перемотка по клику).</summary>
+    public const string JsonFile = "transcript.json";
+
+    static readonly JsonSerializerOptions Json = new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    public static async Task SaveJsonAsync(string path, List<Utterance> utterances, CancellationToken ct = default) =>
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(utterances, Json), ct);
+
+    /// <summary>transcript.json, а для записей, обработанных до его появления, — разбор transcript.md.</summary>
+    public static List<Utterance> Load(string folder)
+    {
+        var json = Path.Combine(folder, JsonFile);
+        if (File.Exists(json))
+            return JsonSerializer.Deserialize<List<Utterance>>(File.ReadAllText(json), Json) ?? [];
+
+        var md = Path.Combine(folder, "transcript.md");
+        if (!File.Exists(md)) return [];
+        var result = new List<Utterance>();
+        foreach (Match m in MdLine.Matches(File.ReadAllText(md)))
+        {
+            var start = TimeSpan.Parse(m.Groups[1].Value);
+            var text = m.Groups[3].Value.Trim();
+            // Конца реплики в md нет: оцениваем по длине (~15 символов в секунду), не дальше начала следующей.
+            var end = start + TimeSpan.FromSeconds(Math.Max(1, text.Length / 15.0));
+            if (result.Count > 0 && result[^1].End > start) result[^1] = result[^1] with { End = start };
+            result.Add(new Utterance(start, end, m.Groups[2].Value, text));
+        }
+        return result;
+    }
+
+    static readonly Regex MdLine = new(@"^\*\*\[(\d{2}:\d{2}:\d{2})\] (.+?):\*\* (.+)$", RegexOptions.Multiline | RegexOptions.Compiled);
 
     /// <summary>Подряд идущие фразы одного говорящего с паузой меньше этой склеиваются в одну реплику.</summary>
     static readonly TimeSpan JoinGap = TimeSpan.FromSeconds(2);

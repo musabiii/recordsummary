@@ -14,6 +14,8 @@ public interface ISettingsHost
     event Action? StatusChanged;
     bool Autostart { get; set; }
     void Apply(Config cfg);
+    /// <summary>Сжать записи, оставшиеся в wav; ход и итог видны в статусе и уведомлении.</summary>
+    void CompressExisting();
     /// <summary>Заново распознать и сделать саммари записи; ход виден в статусе и в трее.</summary>
     void Reprocess(string folder);
 }
@@ -83,6 +85,8 @@ public partial class SettingsWindow : System.Windows.Window
     {
         AutoRecordCheck.IsChecked = c.AutoRecord;
         OutputDirBox.Text = c.OutputDir;
+        CompressCheck.IsChecked = c.CompressAudio;
+        UpdateWavInfo(c.OutputPath);
         AutostartCheck.IsChecked = _host.Autostart;
 
         StartDelaySlider.Value = c.StartDelaySeconds;
@@ -118,6 +122,7 @@ public partial class SettingsWindow : System.Windows.Window
         var c = _host.Current.Clone();
         c.AutoRecord = AutoRecordCheck.IsChecked == true;
         c.OutputDir = OutputDirBox.Text.Trim();
+        c.CompressAudio = CompressCheck.IsChecked == true;
 
         c.StartDelaySeconds = (int)StartDelaySlider.Value;
         c.StopDelaySeconds = (int)StopDelaySlider.Value;
@@ -220,6 +225,24 @@ public partial class SettingsWindow : System.Windows.Window
         var dir = Collect().OutputPath;
         Directory.CreateDirectory(dir);
         Shell(dir);
+    }
+
+    /// <summary>Сколько места занимают несжатые записи — чтобы было понятно, стоит ли жать "Сжать сейчас".</summary>
+    void UpdateWavInfo(string root)
+    {
+        var folders = Directory.Exists(root) ? Directory.GetDirectories(root) : [];
+        var sizes = folders.Select(Tracks.WavBytes).Where(b => b > 0).ToList();
+        WavInfo.Text = sizes.Count == 0
+            ? "Несжатых записей нет."
+            : $"Несжатые записи: {sizes.Sum() / 1073741824.0:0.##} ГБ в звонках: {sizes.Count}. Звонок, который сейчас записывается, не трогается.";
+        CompressNowButton.IsEnabled = sizes.Count > 0;
+    }
+
+    void CompressNow_Click(object sender, RoutedEventArgs e)
+    {
+        CompressNowButton.IsEnabled = false;
+        WavInfo.Text = "Сжимаю… ход виден внизу окна и в трее.";
+        _host.CompressExisting();
     }
 
     // ---------- Звонки ----------
@@ -332,9 +355,9 @@ public partial class SettingsWindow : System.Windows.Window
     {
         var dlg = new Microsoft.Win32.OpenFolderDialog { InitialDirectory = _host.Current.OutputPath, Title = "Папка звонка" };
         if (dlg.ShowDialog() != true) return;
-        if (!File.Exists(Path.Combine(dlg.FolderName, "mic.wav")) || !File.Exists(Path.Combine(dlg.FolderName, "system.wav")))
+        if (Tracks.Find(dlg.FolderName, Tracks.Mic) == null || Tracks.Find(dlg.FolderName, Tracks.System) == null)
         {
-            StatusText.Text = "В этой папке нет mic.wav и system.wav — выберите папку звонка.";
+            StatusText.Text = "В этой папке нет дорожек mic и system — выберите папку звонка.";
             return;
         }
         _host.Reprocess(dlg.FolderName);
@@ -377,6 +400,9 @@ public partial class SettingsWindow : System.Windows.Window
     // ---------- Кнопки ----------
 
     void Apply_Click(object sender, RoutedEventArgs e) => Apply();
+
+    // IsCancel сам закрывает только диалог (ShowDialog), а окно настроек немодальное.
+    void Cancel_Click(object sender, RoutedEventArgs e) => Close();
 
     void Ok_Click(object sender, RoutedEventArgs e)
     {

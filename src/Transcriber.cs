@@ -123,7 +123,9 @@ public sealed class Transcriber : IDisposable
                 var text = DropRepeatedTail(Regex.Replace(seg.Text, @"\s+", " ").Trim());
                 if (text.Length == 0 || Hallucination.IsMatch(text)) continue;
                 var start = from + seg.Start - lead;
-                result.Add(new Utterance(start < from ? from : start, from + seg.End - lead, speaker, text));
+                // С укороченным окном whisper ставит концом сегмента конец 30-секундного окна, а не речи.
+                var end = from + seg.End - lead;
+                result.Add(new Utterance(start < from ? from : start, end > to ? to : end, speaker, text));
             }
         }
         double audioSec = audio.Length / (double)SampleRate;
@@ -173,10 +175,10 @@ public sealed class Transcriber : IDisposable
         return chunks;
     }
 
-    /// <summary>WAV любого формата → 16 кГц моно float.</summary>
+    /// <summary>Дорожка (wav любого формата или сжатая) → 16 кГц моно float.</summary>
     static float[] ReadWav(string path)
     {
-        using var reader = new WaveFileReader(path);
+        using var reader = Tracks.Open(path);
         ISampleProvider src = reader.ToSampleProvider();
         if (src.WaveFormat.Channels > 1) src = new DownmixSampleProvider(src);
         if (src.WaveFormat.SampleRate != SampleRate) src = new WdlResamplingSampleProvider(src, SampleRate);
@@ -193,28 +195,5 @@ public sealed class Transcriber : IDisposable
         _factory.Dispose();
         _vad.Dispose();
         _vadFactory.Dispose();
-    }
-
-    /// <summary>Среднее по каналам. StereoToMono в NAudio умеет только 2 канала, а у микрофонных массивов их бывает 4.</summary>
-    sealed class DownmixSampleProvider(ISampleProvider source) : ISampleProvider
-    {
-        readonly int _channels = source.WaveFormat.Channels;
-        float[] _buf = [];
-
-        public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(source.WaveFormat.SampleRate, 1);
-
-        public int Read(float[] buffer, int offset, int count)
-        {
-            int need = count * _channels;
-            if (_buf.Length < need) _buf = new float[need];
-            int read = source.Read(_buf, 0, need) / _channels;
-            for (int i = 0; i < read; i++)
-            {
-                float sum = 0;
-                for (int c = 0; c < _channels; c++) sum += _buf[i * _channels + c];
-                buffer[offset + i] = sum / _channels;
-            }
-            return read;
-        }
     }
 }

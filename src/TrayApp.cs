@@ -3,7 +3,7 @@ using Microsoft.Win32;
 
 namespace RecordSummary;
 
-public sealed class TrayApp : ApplicationContext, ISettingsHost
+public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
 {
     enum State { Idle, CallDetected, Recording, Processing }
 
@@ -11,9 +11,15 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost
         Amber = Color.FromArgb(245, 166, 35), Blue = Color.FromArgb(0, 122, 255);
 
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    public const string ShowSettingsEvent = @"Local\RecordSummary.ShowSettings";
+    // Debug-сборка запускается рядом с рабочей Release, не мешая ей.
+#if DEBUG
+    public const string InstanceSuffix = ".Debug";
+#else
+    public const string InstanceSuffix = "";
+#endif
+    public const string ShowWindowEvent = @"Local\RecordSummary.ShowWindow" + InstanceSuffix;
 
-    readonly EventWaitHandle _showSettings = new(false, EventResetMode.AutoReset, ShowSettingsEvent);
+    readonly EventWaitHandle _showWindow = new(false, EventResetMode.AutoReset, ShowWindowEvent);
 
     Config _cfg = Config.Load();
     readonly NotifyIcon _tray;
@@ -25,9 +31,11 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost
     string _recordingApp = "";
     bool _tiedToCall;
     Action? _balloonClick;
-    string? _processingText;
-    int _processing;
+    // Папка звонка → ход его обработки. Обрабатываются по очереди, но в очереди может стоять несколько.
+    readonly Dictionary<string, string> _processing = new(StringComparer.OrdinalIgnoreCase);
+    string? _lastProgress;
     SettingsWindow? _settings;
+    CallsWindow? _callsWindow;
 
     public TrayApp()
     {
@@ -41,10 +49,11 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost
         var menu = new ContextMenuStrip();
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("Записи…", null, (_, _) => OpenCalls(null)) { Font = new Font(menu.Font, FontStyle.Bold) });
         menu.Items.Add(_recordItem);
         menu.Items.Add("Открыть папку записей", null, (_, _) => { Directory.CreateDirectory(_cfg.OutputPath); Shell(_cfg.OutputPath); });
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Настройки…", null, (_, _) => OpenSettings()) { Font = new Font(menu.Font, FontStyle.Bold) });
+        menu.Items.Add("Настройки…", null, (_, _) => OpenSettings());
         menu.Items.Add(_autoRecordItem);
         menu.Items.Add(_autostartItem);
         menu.Items.Add("Открыть лог", null, (_, _) => Shell(Log.FilePath));
@@ -52,7 +61,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost
         menu.Items.Add("Выход", null, (_, _) => ExitThread());
 
         _tray = new NotifyIcon { ContextMenuStrip = menu, Visible = true };
-        _tray.DoubleClick += (_, _) => OpenSettings();
+        _tray.DoubleClick += (_, _) => OpenCalls(null);
         _tray.BalloonTipClicked += (_, _) => { var a = _balloonClick; _balloonClick = null; a?.Invoke(); };
         _tray.BalloonTipClosed += (_, _) => _balloonClick = null;
         UpdateState();
@@ -64,7 +73,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost
         _detector.CallEnded += OnCallEnded;
 
         var ui = SynchronizationContext.Current!;
-        ThreadPool.RegisterWaitForSingleObject(_showSettings, (_, _) => ui.Post(_ => OpenSettings(), null), null, -1, false);
+        ThreadPool.RegisterWaitForSingleObject(_showWindow, (_, _) => ui.Post(_ => OpenCalls(null), null), null, -1, false);
         Log.Write("Запущено");
     }
 
@@ -90,18 +99,99 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost
         Log.Write("Настройки применены");
     }
 
-    public void Reprocess(string folder) => _ = ProcessAsync(folder, Path.GetFileName(folder));
-
-    void OpenSettings()
+    public void CompressExisting()
     {
-        if (_settings != null) { _settings.Activate(); return; }
-        // WPF-окно внутри WinForms-приложения: один экземпляр Application ради темы и ресурсов.
+        if (_processing.ContainsKey(CompressKey)) return;
+        var recording = _recorder?.Folder;
+        var root = _cfg.OutputPath;
+        var folders = Directory.Exists(root)
+            ? Directory.GetDirectories(root).Where(f => f != recording && !_processing.ContainsKey(f)).ToList()
+            : [];
+        _callsWindow?.ReleasePlayer();   // плеер держит wav открытым — такой файл не удалить
+        _ = CompressAsync(folders);
+    }
+
+    // Ключ сжатия в _processing: значок и статус в трее показывают его ход, как обработку звонка.
+    const string CompressKey = "*сжатие*";
+
+    async Task CompressAsync(List<string> folders)
+    {
+        _processing[CompressKey] = "Сжимаю записи…";
+        UpdateState();
+        var status = new Progress<string>(s =>
+        {
+            if (!_processing.ContainsKey(CompressKey)) return;
+            _processing[CompressKey] = _lastProgress = s;
+            UpdateState();
+        });
+        try
+        {
+            var (calls, saved) = await CallProcessor.CompressAllAsync(folders, status);
+            Balloon("Записи сжаты", $"Звонков: {calls}, освобождено {saved / 1073741824.0:0.##} ГБ.", null);
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Ошибка сжатия: {e}");
+            Balloon("Не удалось сжать записи", e.Message, null, ToolTipIcon.Error);
+        }
+        finally
+        {
+            _processing.Remove(CompressKey);
+            if (_processing.Count == 0) _lastProgress = null;
+            UpdateState();
+            CallsChanged?.Invoke();
+        }
+    }
+
+    public void Reprocess(string folder)
+    {
+        if (_processing.ContainsKey(folder)) return;
+        var app = System.Text.RegularExpressions.Regex.Replace(Path.GetFileName(folder), @"^\S+ \S+ ", "");
+        _ = ProcessAsync(folder, app);
+    }
+
+    // ---------- ICallsHost ----------
+
+    public string? RecordingFolder => _recorder?.Folder;
+
+    public string? ProcessingStatus(string folder) => _processing.TryGetValue(folder, out var s) ? s : null;
+
+    public event Action? CallsChanged;
+
+    void ICallsHost.OpenSettings() => OpenSettings();
+
+    void OpenCalls(string? folder)
+    {
+        if (_callsWindow != null)
+        {
+            if (folder != null) _callsWindow.Select(folder);
+            if (_callsWindow.WindowState == System.Windows.WindowState.Minimized) _callsWindow.WindowState = System.Windows.WindowState.Normal;
+            _callsWindow.Activate();
+            return;
+        }
+        EnsureWpf();
+        _callsWindow = new CallsWindow(this, folder);
+        System.Windows.Forms.Integration.ElementHost.EnableModelessKeyboardInterop(_callsWindow);
+        _callsWindow.Closed += (_, _) => _callsWindow = null;
+        _callsWindow.Show();
+        _callsWindow.Activate();
+    }
+
+    /// <summary>WPF-окна внутри WinForms-приложения: один экземпляр Application ради темы и ресурсов.</summary>
+    static void EnsureWpf()
+    {
         if (System.Windows.Application.Current == null)
             _ = new System.Windows.Application
             {
                 ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown,
                 ThemeMode = System.Windows.ThemeMode.System,
             };
+    }
+
+    void OpenSettings()
+    {
+        if (_settings != null) { _settings.Activate(); return; }
+        EnsureWpf();
         _settings = new SettingsWindow(this);
         System.Windows.Forms.Integration.ElementHost.EnableModelessKeyboardInterop(_settings);
         _settings.Closed += (_, _) => _settings = null;
@@ -154,6 +244,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost
         _recordItem.Text = "Остановить запись";
         _statusTimer.Start();
         UpdateState();
+        CallsChanged?.Invoke();
     }
 
     void StopRecording()
@@ -168,31 +259,39 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost
 
     async Task ProcessAsync(string folder, string app)
     {
-        _processing++;
+        _processing[folder] = "В очереди на обработку";
+        CallsChanged?.Invoke();
         // Progress захватывает UI-поток, так что статус обновляется безопасно.
-        var status = new Progress<string>(s => { _processingText = s; UpdateState(); });
+        var status = new Progress<string>(s =>
+        {
+            if (!_processing.ContainsKey(folder)) return;   // запоздавшее сообщение после окончания
+            _processing[folder] = _lastProgress = s;
+            UpdateState();
+        });
         try
         {
             var result = await Task.Run(() => CallProcessor.ProcessAsync(folder, _cfg, status));
             var isSummary = Path.GetFileName(result) == "summary.md";
-            Balloon(isSummary ? "Саммари готово" : "Транскрипт готов", $"Звонок в {app}. Нажмите, чтобы открыть.", () => Shell(result));
+            Balloon(isSummary ? "Саммари готово" : "Транскрипт готов", $"Звонок в {app}. Нажмите, чтобы открыть.", () => OpenCalls(folder));
         }
         catch (Exception e)
         {
             Log.Write($"Ошибка обработки {folder}: {e}");
-            Balloon("Не удалось обработать звонок", $"{e.Message}\nЗапись сохранена, нажмите, чтобы открыть папку.", () => Shell(folder), ToolTipIcon.Error);
+            Balloon("Не удалось обработать звонок", $"{e.Message}\nЗапись сохранена, нажмите, чтобы открыть.", () => OpenCalls(folder), ToolTipIcon.Error);
         }
         finally
         {
-            if (--_processing == 0) _processingText = null;
+            _processing.Remove(folder);
+            if (_processing.Count == 0) _lastProgress = null;
             UpdateState();
+            CallsChanged?.Invoke();
         }
     }
 
     void UpdateState()
     {
         if (_recorder != null) SetState(State.Recording, RecordingText);
-        else if (_processing > 0) SetState(State.Processing, _processingText ?? "Обработка…");
+        else if (_processing.Count > 0) SetState(State.Processing, _lastProgress ?? "Обработка…");
         else if (_detector?.ActiveCall != null) SetState(State.CallDetected, $"Звонок в {_detector.ActiveCall}");
         else SetState(State.Idle, "Жду звонка");
     }
@@ -255,6 +354,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost
         if (disposing)
         {
             _settings?.Close();
+            _callsWindow?.Close();
             _recorder?.Dispose();
             _detector.Dispose();
             _statusTimer.Dispose();

@@ -127,6 +127,18 @@
                     </Border>
 
                     <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <CheckBox x:Name="CompressCheck" Content="Сжимать записи после распознавания"/>
+                            <TextBlock Style="{StaticResource Hint}" Margin="28,2,0,0" Text="Каждая дорожка — в моно MP3: час звонка займёт около 60 МБ вместо ~4 ГБ. Для прослушивания и повторного распознавания качества хватает."/>
+                            <Grid Margin="28,10,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="WavInfo" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                                <Button x:Name="CompressNowButton" Grid.Column="1" Content="Сжать сейчас" Click="CompressNow_Click"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
                         <CheckBox x:Name="AutostartCheck" Content="Запускать при входе в Windows"/>
                     </Border>
                 </StackPanel>
@@ -357,7 +369,7 @@
                 <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                     <Button x:Name="OkButton" Content="ОК" MinWidth="100" IsDefault="True" Style="{DynamicResource AccentButtonStyle}" Click="Ok_Click"/>
-                    <Button Content="Отмена" MinWidth="100" Margin="8,0,0,0" IsCancel="True"/>
+                    <Button Content="Отмена" MinWidth="100" Margin="8,0,0,0" IsCancel="True" Click="Cancel_Click"/>
                     <Button x:Name="ApplyButton" Content="Применить" MinWidth="100" Margin="8,0,0,0" Click="Apply_Click"/>
                 </StackPanel>
             </Grid>
