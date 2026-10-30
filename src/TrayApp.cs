@@ -375,7 +375,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
     void StartRecording(string app, bool tiedToCall)
     {
         var folder = Path.Combine(_cfg.OutputPath, $"{DateTime.Now:yyyy-MM-dd HH-mm-ss} {SafeName(app)}");
-        try { _recorder = new CallRecorder(folder); }
+        try { _recorder = new CallRecorder(folder, CallAppPatterns(app)); }
         catch (Exception e)
         {
             Log.Write($"Не удалось начать запись: {e}");
@@ -394,6 +394,13 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         UpdateMenu();
         UpdateState();
         CallsChanged?.Invoke();
+    }
+
+    /// <summary>Фрагменты пути к exe этого приложения; при записи вручную — всех приложений для звонков.</summary>
+    string[] CallAppPatterns(string app)
+    {
+        var own = _cfg.CallApps.Where(p => p.Value == app).Select(p => p.Key).ToArray();
+        return own.Length > 0 ? own : _cfg.CallApps.Keys.ToArray();
     }
 
     void StopRecording()

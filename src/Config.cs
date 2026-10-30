@@ -63,7 +63,29 @@ public sealed class Config
         ["msedge.exe"] = "Edge",
         ["firefox.exe"] = "Firefox",
         ["Yandex\\YandexBrowser"] = "Яндекс Браузер",
+        ["YandexTelemost"] = "Телемост",
     };
+
+    /// <summary>
+    /// Приложения из списка по умолчанию, которые уже попали в CallApps этого файла. Новые при обновлении
+    /// дописываются в CallApps, а удалённые пользователем в настройках не возвращаются.
+    /// </summary>
+    public List<string>? KnownCallApps { get; set; }
+
+    /// <summary>Добавлены в список по умолчанию после появления KnownCallApps — их в старом config.json ещё нет.</summary>
+    static readonly string[] AddedCallApps = ["YandexTelemost"];
+
+    void AddNewCallApps()
+    {
+        var defaults = new Config().CallApps;
+        KnownCallApps ??= defaults.Keys.Except(AddedCallApps).ToList();
+        foreach (var (pattern, name) in defaults)
+            if (!KnownCallApps.Contains(pattern))
+            {
+                CallApps.TryAdd(pattern, name);
+                KnownCallApps.Add(pattern);
+            }
+    }
 
     // --- Транскрипция (whisper.cpp) ---
 
@@ -121,6 +143,7 @@ public sealed class Config
             Log.Write($"config.json не прочитан, настройки по умолчанию: {e.Message}");
             return new();
         }
+        cfg.AddNewCallApps();
         cfg.Save();   // чтобы в файле появились новые настройки
         return cfg;
     }

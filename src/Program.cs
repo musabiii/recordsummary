@@ -74,7 +74,7 @@ static class Program
     static int Record(int seconds, string? folder)
     {
         folder ??= Path.Combine(Config.Load().OutputPath, $"{DateTime.Now:yyyy-MM-dd HH-mm-ss} test");
-        using (new CallRecorder(folder))
+        using (new CallRecorder(folder, Config.Load().CallApps.Keys))
             Thread.Sleep(seconds * 1000);
         foreach (var f in Directory.GetFiles(folder, "*.wav"))
         {

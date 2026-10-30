@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using NAudio.CoreAudioApi;
+using NAudio.CoreAudioApi.Interfaces;
 using NAudio.Wave;
 
 namespace RecordSummary;
@@ -22,15 +23,15 @@ public sealed class CallRecorder : IDisposable
     public float MicLevel => _mic.Level;
     public float SystemLevel => _system.Level;
 
-    public CallRecorder(string folder)
+    /// <param name="callApps">Фрагменты пути к exe приложения звонка (как в Config.CallApps) — по ним ищется устройство вывода.</param>
+    public CallRecorder(string folder, IReadOnlyCollection<string> callApps)
     {
         Folder = folder;
         Directory.CreateDirectory(folder);
 
-        // Приложения для звонков по умолчанию используют устройства связи, а не мультимедиа.
         using var devices = new MMDeviceEnumerator();
         var micDevice = devices.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
-        var outDevice = devices.GetDefaultAudioEndpoint(DataFlow.Render, Role.Communications);
+        var outDevice = FindOutputDevice(devices, callApps);
 
         _micCapture = new WasapiCapture(micDevice);
         _systemCapture = new WasapiLoopbackCapture(outDevice);
@@ -47,6 +48,49 @@ public sealed class CallRecorder : IDisposable
         _clock.Start();
         _micCapture.StartRecording();
         _systemCapture.StartRecording();
+    }
+
+    /// <summary>
+    /// Куда приложение звонка выводит звук. Одни (Zoom, Teams) играют на устройство связи, другие (Телемост,
+    /// браузеры, Telegram) — на обычное устройство по умолчанию, а в настройках звонка можно выбрать любое.
+    /// Поэтому ищем устройство, где у приложения есть звуковой сеанс (играющий — в первую очередь);
+    /// не нашлось — устройство по умолчанию, на него играет большинство программ.
+    /// </summary>
+    static MMDevice FindOutputDevice(MMDeviceEnumerator devices, IReadOnlyCollection<string> callApps)
+    {
+        MMDevice? best = null;
+        int bestScore = 0;
+        foreach (var device in devices.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+        {
+            int score = 0;
+            try
+            {
+                var sessions = device.AudioSessionManager.Sessions;
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    using var s = sessions[i];
+                    if (!IsCallApp(s, callApps)) continue;
+                    score = Math.Max(score, s.State == AudioSessionState.AudioSessionStateActive ? 2 : 1);
+                }
+            }
+            catch (Exception e) { Log.Write($"Сеансы звука \"{device.FriendlyName}\": {e.Message}"); }
+            if (score > bestScore) { best = device; bestScore = score; }
+        }
+        return best ?? devices.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+    }
+
+    /// <summary>В идентификаторе сеанса есть путь к exe (у UWP — имя пакета); на всякий случай смотрим и сам процесс.</summary>
+    static bool IsCallApp(AudioSessionControl session, IReadOnlyCollection<string> callApps)
+    {
+        var id = session.GetSessionIdentifier ?? "";
+        if (callApps.Any(p => id.Contains(p, StringComparison.OrdinalIgnoreCase))) return true;
+        try
+        {
+            using var process = Process.GetProcessById((int)session.GetProcessID);
+            var path = process.MainModule?.FileName ?? "";
+            return callApps.Any(p => path.Contains(p, StringComparison.OrdinalIgnoreCase));
+        }
+        catch { return false; }   // процесс уже завершился или недоступен
     }
 
     /// <summary>Длительность записи без пауз — по ней же выравниваются дорожки.</summary>
