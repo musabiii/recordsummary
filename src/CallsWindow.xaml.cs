@@ -39,6 +39,8 @@ public interface ICallsHost
     /// <summary>Началась или закончилась запись или обработка — список надо перечитать.</summary>
     event Action? CallsChanged;
     void Reprocess(string folder);
+    /// <summary>Только саммари по готовому транскрипту, без распознавания.</summary>
+    void Resummarize(string folder);
     void OpenSettings();
 }
 
@@ -202,6 +204,7 @@ public partial class CallsWindow : Window
         ShowSubtitle(call);
         SetHeaderButtons(true);
         ReprocessItem.IsEnabled = call.State is not (CallState.Recording or CallState.Processing);
+        ResummarizeItem.IsEnabled = ReprocessItem.IsEnabled && File.Exists(Path.Combine(call.Folder, "transcript.md"));
 
         PlayerCard.Visibility = call.HasAudio ? Visibility.Visible : Visibility.Collapsed;
         if (call.HasAudio) OpenPlayer(call);
@@ -259,7 +262,7 @@ public partial class CallsWindow : Window
             var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Res("SystemFillColorCriticalBrush") };
             text.Inlines.Add(new Run("Саммари не получилось: " + error + " "));
             var retry = new Hyperlink(new Run("Повторить"));
-            retry.Click += (s, e) => Reprocess_Click(s, e);
+            retry.Click += (s, e) => Resummarize_Click(s, e);   // транскрипт есть, упало только саммари
             text.Inlines.Add(retry);
             SummaryPanel.Children.Add(new Border
             {
@@ -821,6 +824,12 @@ public partial class CallsWindow : Window
         _player?.Dispose();   // обработка читает те же wav
         _player = null;
         _host.Reprocess(_call.Folder);
+    }
+
+    void Resummarize_Click(object sender, RoutedEventArgs e)
+    {
+        if (_call == null || _call.State is CallState.Recording or CallState.Processing) return;
+        _host.Resummarize(_call.Folder);
     }
 
     void Delete_Click(object sender, RoutedEventArgs e)

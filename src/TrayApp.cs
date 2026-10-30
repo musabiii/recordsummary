@@ -164,6 +164,13 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         _ = ProcessAsync(folder, app);
     }
 
+    public void Resummarize(string folder)
+    {
+        if (_processing.ContainsKey(folder)) return;
+        var app = System.Text.RegularExpressions.Regex.Replace(Path.GetFileName(folder), @"^\S+ \S+ ", "");
+        _ = ProcessAsync(folder, app, summaryOnly: true);
+    }
+
     // ---------- ICallsHost ----------
 
     public string? RecordingFolder => _recorder?.Folder;
@@ -417,9 +424,9 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         _ = ProcessAsync(rec.Folder, _recordingApp);
     }
 
-    async Task ProcessAsync(string folder, string app)
+    async Task ProcessAsync(string folder, string app, bool summaryOnly = false)
     {
-        _processing[folder] = "В очереди на обработку";
+        _processing[folder] = summaryOnly ? "В очереди на саммари" : "В очереди на обработку";
         CallsChanged?.Invoke();
         // Progress захватывает UI-поток, так что статус обновляется безопасно.
         var status = new Progress<string>(s =>
@@ -430,7 +437,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         });
         try
         {
-            var result = await Task.Run(() => CallProcessor.ProcessAsync(folder, _cfg, status));
+            var result = await Task.Run(() => CallProcessor.ProcessAsync(folder, _cfg, status, summaryOnly));
             var isSummary = Path.GetFileName(result) == "summary.md";
             Balloon(isSummary ? "Саммари готово" : "Транскрипт готов", $"Звонок в {app}. Нажмите, чтобы открыть.", () => OpenCalls(folder));
         }

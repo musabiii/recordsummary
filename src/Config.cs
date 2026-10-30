@@ -100,10 +100,22 @@ public sealed class Config
     /// <summary>Номер Vulkan-устройства (если видеокарт несколько, например встроенная + дискретная).</summary>
     public int GpuDevice { get; set; } = 0;
 
+    /// <summary>Разделять собеседников по голосу: "Собеседник 1", "Собеседник 2"… вместо одного "Собеседника".</summary>
+    public bool SplitSpeakers { get; set; } = true;
+
+    /// <summary>Сколько собеседников (без вас), если известно заранее; 0 — определить по голосам.</summary>
+    public int SpeakerCount { get; set; } = 0;
+
+    /// <summary>Порог похожести голосов при автоопределении: больше — меньше собеседников (меньше дробит одного на двоих). 0,5 у sherpa по умолчанию делит одного человека на нескольких.</summary>
+    public float SpeakerThreshold { get; set; } = 0.75f;
+
     // --- Саммари ---
 
     /// <summary>"local" — gguf-модель внутри приложения, "api" — OpenAI-совместимый API (OpenRouter, Ollama, LM Studio), "off" — только транскрипт.</summary>
     public string SummaryProvider { get; set; } = "local";
+
+    /// <summary>Инструкция модели для итогового саммари; пусто — встроенная (Summarizer.DefaultPrompt).</summary>
+    public string SummaryPrompt { get; set; } = "";
 
     public string LocalModel { get; set; } = "models/Qwen2.5-7B-Instruct-Q4_K_M.gguf";
 

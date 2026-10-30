@@ -267,6 +267,21 @@
                         </Grid>
                     </Border>
 
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <CheckBox x:Name="SplitSpeakersCheck" Content="Разделять собеседников по голосу" Checked="SplitSpeakers_Changed" Unchecked="SplitSpeakers_Changed"/>
+                            <TextBlock Style="{StaticResource Hint}" Margin="28,2,0,0" Text="Вместо одного «Собеседника» — «Собеседник 1», «Собеседник 2»… Работает на процессоре, модели (~32 МБ) скачаются сами. Чтобы разделить старый звонок, обработайте его заново."/>
+                            <Grid Margin="28,10,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource Label}" Text="Сколько собеседников"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="Без вас. Если знаете точно — укажите: так надёжнее, чем по голосам."/>
+                                </StackPanel>
+                                <ComboBox x:Name="SpeakerCountCombo" Grid.Column="1" Width="240" VerticalAlignment="Center"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Style="{StaticResource Group}" Text="Ускорение"/>
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
@@ -358,6 +373,18 @@
                             </StackPanel>
                         </Border>
                     </StackPanel>
+
+                    <TextBlock Style="{StaticResource Group}" Text="Промт"/>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,16,0" Text="Инструкция модели для саммари: что и в каком формате писать. После неё модели передаётся транскрипт «[чч:мм:сс] Говорящий: текст»."/>
+                                <Button Grid.Column="1" Content="Вернуть стандартный" Click="ResetPrompt_Click"/>
+                            </Grid>
+                            <TextBox x:Name="SummaryPromptBox" Margin="0,10,0,0" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160" MaxHeight="360" VerticalScrollBarVisibility="Auto"/>
+                        </StackPanel>
+                    </Border>
 
                     <TextBlock Style="{StaticResource Group}" Text="Готовые записи"/>
                     <Border Style="{StaticResource Card}">

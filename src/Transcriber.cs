@@ -102,16 +102,16 @@ public sealed class Transcriber : IDisposable
         return t;
     }
 
-    public async Task<List<Utterance>> TranscribeAsync(string wavPath, string speaker, IProgress<string> status, CancellationToken ct = default)
+    /// <param name="speakers">Для системной дорожки: кто из собеседников когда говорит; null — вся дорожка это <paramref name="speaker"/>.</param>
+    public async Task<List<Utterance>> TranscribeAsync(float[] audio, string name, string speaker, SpeakerTurns? speakers, IProgress<string> status, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        var audio = await Task.Run(() => ReadWav(wavPath), ct);
-        var chunks = SpeechChunks(audio);
+        var chunks = SpeechChunks(audio, speaker, speakers);
         var result = new List<Utterance>();
         for (int i = 0; i < chunks.Count; i++)
         {
             status.Report($"Распознаю: {speaker} {i * 100 / chunks.Count}%");
-            var (from, to) = chunks[i];
+            var (from, to, who) = chunks[i];
             int a = (int)(from.TotalSeconds * SampleRate), b = Math.Min(audio.Length, (int)(to.TotalSeconds * SampleRate));
             // Тишина по краям: в начале whisper нужно ≥1 с, в конце — чтобы не съедалось последнее слово.
             var padded = new float[SampleRate + (b - a) + SampleRate / 2];
@@ -125,11 +125,11 @@ public sealed class Transcriber : IDisposable
                 var start = from + seg.Start - lead;
                 // С укороченным окном whisper ставит концом сегмента конец 30-секундного окна, а не речи.
                 var end = from + seg.End - lead;
-                result.Add(new Utterance(start < from ? from : start, end > to ? to : end, speaker, text));
+                result.Add(new Utterance(start < from ? from : start, end > to ? to : end, who, text));
             }
         }
         double audioSec = audio.Length / (double)SampleRate;
-        Log.Write($"{Path.GetFileName(wavPath)}: {audioSec:F0} с аудио, {chunks.Count} кусков речи, {result.Count} фраз за {sw.Elapsed.TotalSeconds:F1} с");
+        Log.Write($"{name}: {audioSec:F0} с аудио, {chunks.Count} кусков речи, {result.Count} фраз за {sw.Elapsed.TotalSeconds:F1} с");
         return result;
     }
 
@@ -151,10 +151,10 @@ public sealed class Transcriber : IDisposable
         return text;
     }
 
-    /// <summary>Отрезки речи по VAD, склеенные в куски до ~28 с (одно окно whisper).</summary>
-    List<(TimeSpan From, TimeSpan To)> SpeechChunks(float[] audio)
+    /// <summary>Отрезки речи по VAD, склеенные в куски до ~28 с (одно окно whisper). Разных собеседников не склеиваем.</summary>
+    List<(TimeSpan From, TimeSpan To, string Speaker)> SpeechChunks(float[] audio, string speaker, SpeakerTurns? speakers)
     {
-        var chunks = new List<(TimeSpan From, TimeSpan To)>();
+        var chunks = new List<(TimeSpan From, TimeSpan To, string Speaker)>();
         if (audio.Length == 0) return chunks;
         var pad = TimeSpan.FromMilliseconds(250);
         var total = TimeSpan.FromSeconds(audio.Length / (double)SampleRate);
@@ -162,21 +162,22 @@ public sealed class Transcriber : IDisposable
         {
             var from = s.Start - pad < TimeSpan.Zero ? TimeSpan.Zero : s.Start - pad;
             var to = s.End + pad > total ? total : s.End + pad;
-            // Длинный монолог без пауз режем по окну whisper.
-            for (var f = from; f < to; f += MaxChunk)
-            {
-                var t = f + MaxChunk < to ? f + MaxChunk : to;
-                if (chunks.Count > 0 && f - chunks[^1].To < MaxGap && t - chunks[^1].From <= MaxChunk)
-                    chunks[^1] = (chunks[^1].From, t);
-                else
-                    chunks.Add((f, t));
-            }
+            foreach (var (pf, pt, who) in speakers?.Split(from, to) ?? [(from, to, speaker)])
+                // Длинный монолог без пауз режем по окну whisper.
+                for (var f = pf; f < pt; f += MaxChunk)
+                {
+                    var t = f + MaxChunk < pt ? f + MaxChunk : pt;
+                    if (chunks.Count > 0 && chunks[^1].Speaker == who && f - chunks[^1].To < MaxGap && t - chunks[^1].From <= MaxChunk)
+                        chunks[^1] = (chunks[^1].From, t, who);
+                    else
+                        chunks.Add((f, t, who));
+                }
         }
         return chunks;
     }
 
     /// <summary>Дорожка (wav любого формата или сжатая) → 16 кГц моно float.</summary>
-    static float[] ReadWav(string path)
+    public static float[] ReadAudio(string path)
     {
         using var reader = Tracks.Open(path);
         ISampleProvider src = reader.ToSampleProvider();

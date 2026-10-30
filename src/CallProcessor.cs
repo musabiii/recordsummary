@@ -14,14 +14,15 @@ public static class CallProcessor
     static readonly SemaphoreSlim Queue = new(1, 1);   // два звонка подряд обрабатываются по очереди
 
     /// <summary>Путь к summary.md, или к transcript.md, если саммари выключено или не получилось.</summary>
-    public static async Task<string> ProcessAsync(string folder, Config cfg, IProgress<string> status, CancellationToken ct = default)
+    /// <param name="summaryOnly">Транскрипт устраивает — только заново сделать саммари по нему (например, после смены промта или модели).</param>
+    public static async Task<string> ProcessAsync(string folder, Config cfg, IProgress<string> status, bool summaryOnly = false, CancellationToken ct = default)
     {
         await Queue.WaitAsync(ct);
         var errorPath = Path.Combine(folder, ErrorFile);
         try
         {
             File.Delete(errorPath);
-            return await RunAsync(folder, cfg, status, ct);
+            return summaryOnly ? await ResummarizeAsync(folder, cfg, status, ct) : await RunAsync(folder, cfg, status, ct);
         }
         catch (Exception e)
         {
@@ -37,12 +38,17 @@ public static class CallProcessor
         var title = Path.GetFileName(folder.TrimEnd('\\', '/'));
         var transcriptPath = Path.Combine(folder, "transcript.md");
 
+        var micAudio = await Task.Run(() => Transcriber.ReadAudio(Tracks.Require(folder, Tracks.Mic)), ct);
+        var systemAudio = await Task.Run(() => Transcriber.ReadAudio(Tracks.Require(folder, Tracks.System)), ct);
+        // До whisper: разделение на CPU, видеопамять ему не нужна.
+        var speakers = cfg.SplitSpeakers ? await Diarizer.RunAsync(systemAudio, cfg, status, ct) : null;
+
         List<Utterance> dialog;
         using (var t = await Transcriber.CreateAsync(cfg, status))
         {
-            var mic = await t.TranscribeAsync(Tracks.Require(folder, Tracks.Mic), Transcript.Me, status, ct);
-            var system = await t.TranscribeAsync(Tracks.Require(folder, Tracks.System), Transcript.Them, status, ct);
-            dialog = Transcript.Merge(mic, system);
+            var mic = await t.TranscribeAsync(micAudio, Tracks.Mic, Transcript.Me, null, status, ct);
+            var system = await t.TranscribeAsync(systemAudio, Tracks.System, Transcript.Them, speakers, status, ct);
+            dialog = Transcript.Merge(mic, Transcript.Renumber(system));
         }
         await File.WriteAllTextAsync(transcriptPath, Transcript.ToMarkdown(title, dialog), ct);
         await Transcript.SaveJsonAsync(Path.Combine(folder, Transcript.JsonFile), dialog, ct);
@@ -52,11 +58,26 @@ public static class CallProcessor
         if (cfg.CompressAudio) CompressQuietly(folder, status);
 
         if (dialog.Count == 0) return transcriptPath;
-        using var llm = await Summarizer.CreateAsync(cfg, status);
-        if (llm == null) return transcriptPath;
+        return await SummarizeAsync(folder, title, dialog, cfg, status, ct) ?? transcriptPath;
+    }
 
-        sw.Restart();
-        var summary = await Summarizer.SummarizeAsync(llm, Transcript.Format(dialog), status, ct);
+    static async Task<string> ResummarizeAsync(string folder, Config cfg, IProgress<string> status, CancellationToken ct)
+    {
+        var dialog = Transcript.Load(folder);
+        if (dialog.Count == 0) throw new InvalidOperationException("Транскрипта нет или он пустой — звонок нужно распознать заново");
+        var title = Path.GetFileName(folder.TrimEnd('\\', '/'));
+        return await SummarizeAsync(folder, title, dialog, cfg, status, ct)
+            ?? throw new InvalidOperationException("Саммари выключено в настройках");
+    }
+
+    /// <summary>Путь к summary.md; null — саммари выключено.</summary>
+    static async Task<string?> SummarizeAsync(string folder, string title, List<Utterance> dialog, Config cfg, IProgress<string> status, CancellationToken ct)
+    {
+        using var llm = await Summarizer.CreateAsync(cfg, status);
+        if (llm == null) return null;
+
+        var sw = Stopwatch.StartNew();
+        var summary = await Summarizer.SummarizeAsync(llm, Transcript.Format(dialog), cfg.SummaryPrompt, status, ct);
         // Тему модель пишет первой строкой "# …"; если забыла — заголовок по папке.
         if (!summary.StartsWith("# ")) summary = $"# {title}\n\n{summary}";
         var summaryPath = Path.Combine(folder, "summary.md");

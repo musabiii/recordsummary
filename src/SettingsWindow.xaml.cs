@@ -41,6 +41,9 @@ public partial class SettingsWindow : System.Windows.Window
     ];
 
     // Оценка "сколько звонка влезает целиком": ~900 символов русской речи в минуту, ~2,5 символа на токен.
+    static readonly Option[] SpeakerCounts =
+        [new("0", "Определить по голосам"), .. Enumerable.Range(1, 9).Select(n => new Option(n.ToString(), n.ToString()))];
+
     static readonly Option[] Contexts =
     [
         new("8192", "8K — звонок до ~15 мин целиком"),
@@ -128,6 +131,11 @@ public partial class SettingsWindow : System.Windows.Window
         Select(GpuCombo, gpus, c.GpuDevice.ToString());
         UseGpuCheck.IsChecked = c.UseGpu;
         UpdateGpuEnabled();
+        var counts = SpeakerCounts.ToList();
+        if (counts.All(x => x.Value != c.SpeakerCount.ToString())) counts.Add(new(c.SpeakerCount.ToString(), c.SpeakerCount.ToString()));
+        Select(SpeakerCountCombo, counts, c.SpeakerCount.ToString());
+        SplitSpeakersCheck.IsChecked = c.SplitSpeakers;
+        UpdateSpeakersEnabled();
 
         (c.SummaryProvider.ToLowerInvariant() switch { "api" => ProviderApi, "off" => ProviderOff, _ => ProviderLocal }).IsChecked = true;
         FillModels(LocalModelCombo, "*.gguf", c.LocalModel);
@@ -139,6 +147,7 @@ public partial class SettingsWindow : System.Windows.Window
         ApiKeyBox.Password = c.ApiKey;
         ApiModelCombo.ItemsSource = OpenRouterModels;
         ApiModelCombo.Text = c.ApiModel;
+        SummaryPromptBox.Text = string.IsNullOrWhiteSpace(c.SummaryPrompt) ? Summarizer.DefaultPrompt : c.SummaryPrompt;
         UpdateProvider();
     }
 
@@ -170,6 +179,8 @@ public partial class SettingsWindow : System.Windows.Window
         c.Language = Value(LanguageCombo) ?? c.Language;
         c.UseGpu = UseGpuCheck.IsChecked == true;
         c.GpuDevice = int.Parse(Value(GpuCombo) ?? "0");
+        c.SplitSpeakers = SplitSpeakersCheck.IsChecked == true;
+        c.SpeakerCount = int.Parse(Value(SpeakerCountCombo) ?? "0");
 
         c.SummaryProvider = ProviderApi.IsChecked == true ? "api" : ProviderOff.IsChecked == true ? "off" : "local";
         c.LocalModel = Value(LocalModelCombo) ?? c.LocalModel;
@@ -177,6 +188,9 @@ public partial class SettingsWindow : System.Windows.Window
         c.ApiBaseUrl = ApiUrlBox.Text.Trim();
         c.ApiKey = ApiKeyBox.Password.Trim();
         c.ApiModel = ApiModelCombo.Text.Trim();
+        // Стандартный не сохраняем текстом: тогда его улучшения в новых версиях дойдут и до этого config.json.
+        var prompt = SummaryPromptBox.Text.Trim();
+        c.SummaryPrompt = prompt == Summarizer.DefaultPrompt.Trim() ? "" : prompt;
         return c;
     }
 
@@ -244,6 +258,15 @@ public partial class SettingsWindow : System.Windows.Window
     {
         if (GpuCombo != null) GpuCombo.IsEnabled = UseGpuCheck.IsChecked == true;
     }
+
+    void SplitSpeakers_Changed(object sender, RoutedEventArgs e) => UpdateSpeakersEnabled();
+
+    void UpdateSpeakersEnabled()
+    {
+        if (SpeakerCountCombo != null) SpeakerCountCombo.IsEnabled = SplitSpeakersCheck.IsChecked == true;
+    }
+
+    void ResetPrompt_Click(object sender, RoutedEventArgs e) => SummaryPromptBox.Text = Summarizer.DefaultPrompt;
 
     // ---------- Основное ----------
 

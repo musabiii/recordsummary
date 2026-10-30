@@ -132,6 +132,7 @@
                         <Button.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Переименовать" Click="Rename_Click"/>
+                                <MenuItem x:Name="ResummarizeItem" Header="Заново сделать саммари" ToolTip="По готовому транскрипту, без распознавания — например, после смены промта или модели" Click="Resummarize_Click"/>
                                 <MenuItem x:Name="ReprocessItem" Header="Заново распознать и сделать саммари" Click="Reprocess_Click"/>
                                 <MenuItem Header="Открыть transcript.md" Click="OpenTranscript_Click"/>
                                 <Separator/>

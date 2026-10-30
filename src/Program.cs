@@ -16,7 +16,10 @@ static class Program
             return Video(int.Parse(args[1]), args[2], args.ElementAtOrDefault(3));
         // Транскрипт и саммари готовой записи: RecordSummary.exe --process "папка звонка"
         if (args.Length == 2 && args[0] == "--process")
-            return Process(args[1]).GetAwaiter().GetResult();
+            return Process(args[1], false).GetAwaiter().GetResult();
+        // Только саммари по готовому транскрипту: RecordSummary.exe --summary "папка звонка"
+        if (args.Length == 2 && args[0] == "--summary")
+            return Process(args[1], true).GetAwaiter().GetResult();
 
         using var mutex = new Mutex(true, @"Local\RecordSummary.SingleInstance" + TrayApp.InstanceSuffix, out bool first);
         if (!first)
@@ -40,11 +43,11 @@ static class Program
         return 0;
     }
 
-    static async Task<int> Process(string folder)
+    static async Task<int> Process(string folder, bool summaryOnly)
     {
         try
         {
-            var result = await CallProcessor.ProcessAsync(folder, Config.Load(), new Progress<string>(Log.Write));
+            var result = await CallProcessor.ProcessAsync(folder, Config.Load(), new Progress<string>(Log.Write), summaryOnly);
             Log.Write($"Готово: {result}");
             return 0;
         }

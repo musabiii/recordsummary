@@ -19,9 +19,12 @@ public interface ILlm : IDisposable
 /// </summary>
 public static class Summarizer
 {
-    const string SummarySystem =
+    /// <summary>Встроенная инструкция для итога; пользователь может заменить её в настройках (Config.SummaryPrompt).</summary>
+    public const string DefaultPrompt =
         "Ты делаешь саммари рабочего звонка по транскрипту. В транскрипте \"Я\" — владелец записи, " +
-        "\"Собеседник\" — все остальные участники (их может быть несколько, имена бери из разговора, если они звучат). " +
+        "\"Собеседник 1\", \"Собеседник 2\"… — другие участники, разделённые автоматически по голосу " +
+        "(разделение может ошибаться; просто \"Собеседник\" — один или несколько неразделённых участников). " +
+        "Если в разговоре звучат имена, сопоставь их с номерами и пиши имена, иначе — номера. " +
         "Транскрипт распознан автоматически, в нём бывают ошибки — восстанавливай смысл по контексту, но не выдумывай. " +
         "У каждой реплики в начале время [чч:мм:сс]. " +
         "Пиши по-русски, в Markdown, строго в таком формате:\n\n" +
@@ -35,14 +38,16 @@ public static class Summarizer
         "Не добавляй ничего до первого заголовка и после последнего раздела.";
 
     const string NotesSystem =
-        "Это фрагмент транскрипта длинного рабочего звонка. \"Я\" — владелец записи, \"Собеседник\" — остальные. " +
+        "Это фрагмент транскрипта длинного рабочего звонка. \"Я\" — владелец записи, \"Собеседник N\" — остальные участники, " +
+        "разделённые по голосу. Если звучат имена, отметь, кто под каким номером. " +
         "Выпиши по-русски сжатые заметки по фрагменту: темы, факты и цифры, решения, задачи (кто — что — срок), открытые вопросы. " +
         "У решений и задач сохраняй время реплики из транскрипта в формате [чч:мм:сс]. " +
         "Только то, что есть во фрагменте, без вступлений и выводов.";
 
     static readonly Regex Think = new(@"<think>.*?</think>", RegexOptions.Singleline | RegexOptions.Compiled);
 
-    public static async Task<string> SummarizeAsync(ILlm llm, string transcript, IProgress<string> status, CancellationToken ct = default)
+    /// <param name="prompt">Инструкция для итога; пусто — <see cref="DefaultPrompt"/>.</param>
+    public static async Task<string> SummarizeAsync(ILlm llm, string transcript, string? prompt, IProgress<string> status, CancellationToken ct = default)
     {
         var text = transcript;
         // Сжимаем, пока не влезет: заметки по кускам, затем, если нужно, заметки по заметкам.
@@ -61,7 +66,7 @@ public static class Summarizer
         }
         status.Report("Саммари: итог");
         var input = text == transcript ? "Транскрипт:\n\n" + text : "Заметки по фрагментам звонка (по порядку):\n\n" + text;
-        return Clean(await llm.CompleteAsync(SummarySystem, input, 2200, ct));
+        return Clean(await llm.CompleteAsync(string.IsNullOrWhiteSpace(prompt) ? DefaultPrompt : prompt, input, 2200, ct));
     }
 
     /// <summary>Режет по строкам (репликам), чтобы не рвать фразы посередине.</summary>

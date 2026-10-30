@@ -58,6 +58,18 @@ public static class Transcript
         return result;
     }
 
+    /// <summary>
+    /// Номера собеседников по порядку их реплик: у кого речь не распозналась (короткое "угу"), номер не занимает.
+    /// Остался один — он просто "Собеседник".
+    /// </summary>
+    public static List<Utterance> Renumber(List<Utterance> utterances)
+    {
+        var them = utterances.Select(u => u.Speaker).Where(s => s.StartsWith(Them + " ")).Distinct().ToList();
+        return utterances
+            .Select(u => them.Contains(u.Speaker) ? u with { Speaker = them.Count > 1 ? $"{Them} {them.IndexOf(u.Speaker) + 1}" : Them } : u)
+            .ToList();
+    }
+
     /// <summary>Текст для LLM и для человека: "[00:01:23] Я: ...".</summary>
     public static string Format(IEnumerable<Utterance> utterances)
     {
