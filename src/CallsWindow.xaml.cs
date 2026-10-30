@@ -80,6 +80,7 @@ public partial class CallsWindow : Window
     {
         _host = host;
         InitializeComponent();
+        WindowFit.Fit(this);
 
         SpeedCombo.ItemsSource = Speeds.Select(s => s.ToString("0.##", Ru) + "×").ToList();
         SpeedCombo.SelectedIndex = 0;

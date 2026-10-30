@@ -92,6 +92,7 @@ public partial class SettingsWindow : System.Windows.Window
     {
         _host = host;
         InitializeComponent();
+        WindowFit.Fit(this);
         AppsGrid.ItemsSource = _apps;
         Load(host.Current);
 

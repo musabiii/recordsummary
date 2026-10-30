@@ -24,6 +24,7 @@ public partial class ScreenshotViewer : Window
         _listen = listen;
         _index = index;
         InitializeComponent();
+        WindowFit.Fit(this);
         PreviewKeyDown += OnKey;
         ShowShot(_index);
     }
