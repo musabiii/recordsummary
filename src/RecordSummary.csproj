@@ -18,6 +18,7 @@
     <SelfContained>false</SelfContained>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>RecordSummary</AssemblyName>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <RootNamespace>RecordSummary</RootNamespace>
     <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
