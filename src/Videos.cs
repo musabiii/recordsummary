@@ -6,6 +6,12 @@ using ScreenRecorderLib;
 
 namespace RecordSummary;
 
+/// <summary>Источник, выбранный пользователем на время текущего звонка.</summary>
+public sealed record VideoTarget(IntPtr Window, string? Display, string Title)
+{
+    public override string ToString() => Title;
+}
+
 /// <summary>Фрагмент видео экрана; Start и End — время записи звонка (без пауз), как у реплик и скриншотов.</summary>
 public sealed record VideoSegment(string Path, TimeSpan Start, TimeSpan End)
 {
@@ -21,7 +27,7 @@ public static class Videos
 {
     public const string Dir = "video";
 
-    static readonly Regex Name = new(@"^(\d{2,})-(\d{2})-(\d{2})--(\d{2,})-(\d{2})-(\d{2})\.mp4$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    static readonly Regex Name = new(@"^(\d{2,})-(\d{2})-(\d{2})(?:-(\d{3}))?--(\d{2,})-(\d{2})-(\d{2})(?:-(\d{3}))?\.mp4$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static List<VideoSegment> List(string folder)
     {
@@ -32,13 +38,14 @@ public static class Videos
         {
             var m = Name.Match(Path.GetFileName(file));
             if (!m.Success) continue;
-            TimeSpan T(int g) => new(int.Parse(m.Groups[g].Value), int.Parse(m.Groups[g + 1].Value), int.Parse(m.Groups[g + 2].Value));
-            result.Add(new VideoSegment(file, T(1), T(4)));
+            TimeSpan T(int g) => new TimeSpan(int.Parse(m.Groups[g].Value), int.Parse(m.Groups[g + 1].Value), int.Parse(m.Groups[g + 2].Value))
+                + TimeSpan.FromMilliseconds(m.Groups[g + 3].Success ? int.Parse(m.Groups[g + 3].Value) : 0);
+            result.Add(new VideoSegment(file, T(1), T(5)));
         }
         return result.OrderBy(v => v.Start).ToList();
     }
 
-    public static string Stamp(TimeSpan t) => $"{(int)t.TotalHours:D2}-{t.Minutes:D2}-{t.Seconds:D2}";
+    public static string Stamp(TimeSpan t) => $"{(int)t.TotalHours:D2}-{t.Minutes:D2}-{t.Seconds:D2}-{t.Milliseconds:D3}";
 }
 
 /// <summary>
@@ -49,14 +56,24 @@ public sealed class VideoRecorder : IDisposable
 {
     readonly string _folder;
     readonly Func<TimeSpan> _elapsed;
-    Recorder? _recorder;
-    string _partPath = "";
-    TimeSpan _start;
+    sealed class Session(Recorder recorder, string path, TimeSpan start)
+    {
+        public readonly Recorder Recorder = recorder;
+        public readonly string Path = path;
+        public readonly TimeSpan Start = start;
+        public TimeSpan? End;
+        public int Completed;
+        public readonly TaskCompletionSource Finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
-    public bool IsRecording => _recorder != null;
+    Session? _session;
+    Task _finishing = Task.CompletedTask;
+
+    public bool IsRecording => _session != null;
 
     /// <summary>Описание того, что снимается: "окно «Zoom Meeting»" или "монитор DISPLAY2".</summary>
     public string Source { get; private set; } = "";
+    public VideoTarget? Target { get; private set; }
 
     /// <summary>Запись упала (окно закрыли, кодировщик недоступен…). Приходит не из UI-потока.</summary>
     public event Action<string>? Failed;
@@ -68,11 +85,13 @@ public sealed class VideoRecorder : IDisposable
     }
 
     /// <param name="callKey">Путь к exe приложения звонка (из детектора) — чтобы снимать его окно.</param>
-    public void Start(Config cfg, string? callKey)
+    public void Start(Config cfg, string? callKey, VideoTarget? target = null)
     {
-        if (_recorder != null) return;
-        var (source, size, description) = PickSource(cfg, callKey);
+        if (_session != null) return;
+        target ??= PickTarget(cfg, callKey);
+        var (source, size, description) = CreateSource(target);
         Source = description;
+        Target = target;
 
         var options = new RecorderOptions
         {
@@ -97,43 +116,72 @@ public sealed class VideoRecorder : IDisposable
             MouseOptions = new MouseOptions { IsMousePointerEnabled = true },
         };
 
-        _start = _elapsed();
+        var start = _elapsed();
         var dir = Path.Combine(_folder, Videos.Dir);
         Directory.CreateDirectory(dir);
-        _partPath = Path.Combine(dir, Videos.Stamp(_start) + ".part.mp4");
+        var part = Path.Combine(dir, Videos.Stamp(start) + $"-{Guid.NewGuid():N}.part.mp4");
         var rec = Recorder.CreateRecorder(options);
-        var part = _partPath;
-        var start = _start;
+        var session = new Session(rec, part, start);
         rec.OnRecordingFailed += (_, e) =>
         {
             Log.Write($"Видео: ошибка записи {e.Error}");
-            Finish(part, start, _elapsed());
-            Failed?.Invoke(e.Error);
+            bool current = ReferenceEquals(Interlocked.CompareExchange(ref _session, null, session), session);
+            Complete(session);
+            if (current) Failed?.Invoke(e.Error);
         };
-        rec.OnRecordingComplete += (_, _) => Log.Write($"Видео: фрагмент {Path.GetFileName(part)} записан");
-        rec.Record(_partPath);
-        _recorder = rec;
+        rec.OnRecordingComplete += (_, _) => Complete(session);
+        _session = session;
+        _finishing = session.Finished.Task;
+        try { rec.Record(part); }
+        catch
+        {
+            Interlocked.CompareExchange(ref _session, null, session);
+            Complete(session);
+            throw;
+        }
         Log.Write($"Видео: начато с {start:hh\\:mm\\:ss}, {description}, {options.OutputOptions.OutputFrameSize?.Width}×{options.OutputOptions.OutputFrameSize?.Height} @ {cfg.VideoFramerate} к/с");
     }
 
-    public void Pause() => _recorder?.Pause();
-    public void Resume() => _recorder?.Resume();
+    public void Pause() => _session?.Recorder.Pause();
+    public void Resume() => _session?.Recorder.Resume();
+
+    void Complete(Session session)
+    {
+        if (Interlocked.Exchange(ref session.Completed, 1) != 0) return;
+        var end = session.End ?? _elapsed();
+        // Callback приходит из потока кодировщика. Dispose ждёт этот поток,
+        // поэтому освобождаем его снаружи callback, а файл переименовываем уже после закрытия.
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                session.Recorder.Dispose();
+                Finish(session.Path, session.Start, end);
+                session.Finished.TrySetResult();
+            }
+            catch (Exception e)
+            {
+                Log.Write($"Видео: ошибка завершения фрагмента: {e.Message}");
+                session.Finished.TrySetException(e);
+            }
+        });
+    }
 
     /// <summary>Закончить фрагмент. Кодировщик дописывает файл в фоне; когда закончит — файл получает имя с концом фрагмента.</summary>
     public void Stop()
     {
-        var rec = _recorder;
-        if (rec == null) return;
-        _recorder = null;
-        var part = _partPath;
-        var start = _start;
-        var end = _elapsed();
-        rec.OnRecordingComplete += (_, _) =>
-        {
-            Finish(part, start, end);
-            rec.Dispose();
-        };
-        rec.Stop();
+        var session = _session;
+        if (session == null) return;
+        session.End = _elapsed();
+        if (!ReferenceEquals(Interlocked.CompareExchange(ref _session, null, session), session)) return;
+        try { session.Recorder.Stop(); }
+        catch { Complete(session); throw; }
+    }
+
+    public async Task StopAndWaitAsync()
+    {
+        Stop();
+        await _finishing.WaitAsync(TimeSpan.FromSeconds(15));
     }
 
     static void Finish(string part, TimeSpan start, TimeSpan end)
@@ -141,9 +189,10 @@ public sealed class VideoRecorder : IDisposable
         try
         {
             if (!File.Exists(part)) return;
-            if (end <= start) end = start + TimeSpan.FromSeconds(1);
+            // Смена окна во время паузы не должна создавать пересекающийся фрагмент.
+            if (end <= start) { File.Delete(part); return; }
             var final = Path.Combine(Path.GetDirectoryName(part)!, $"{Videos.Stamp(start)}--{Videos.Stamp(end)}.mp4");
-            File.Move(part, final, true);
+            File.Move(part, final);
             Log.Write($"Видео: {Path.GetFileName(final)}, {new FileInfo(final).Length / 1048576.0:F1} МБ");
         }
         catch (Exception e) { Log.Write($"Видео: не удалось переименовать {part}: {e.Message}"); }
@@ -157,18 +206,46 @@ public sealed class VideoRecorder : IDisposable
     /// Окно приложения звонка (самое большое видимое окно его процессов), иначе — монитор с окном в фокусе.
     /// Окно пишется, даже если его перекрыли другим окном.
     /// </summary>
-    static (RecordingSourceBase Source, Size Size, string Description) PickSource(Config cfg, string? callKey)
+    public static List<VideoTarget> ListTargets()
+    {
+        var windows = Recorder.GetWindows()
+            .Where(w => w.Pid != Environment.ProcessId && w.IsValidWindow() && !w.IsMinmimized() && !string.IsNullOrWhiteSpace(w.Title))
+            .Select(w => new VideoTarget(w.Handle, null, $"Окно: {w.Title}"))
+            .OrderBy(w => w.Title, StringComparer.CurrentCultureIgnoreCase);
+        return Screen.AllScreens.Select(s => new VideoTarget(IntPtr.Zero, s.DeviceName,
+            $"Монитор {s.DeviceName.TrimStart('\\', '.')} · {s.Bounds.Width}×{s.Bounds.Height}" + (s.Primary ? " (основной)" : "")))
+            .Concat(windows).ToList();
+    }
+
+    static VideoTarget PickTarget(Config cfg, string? callKey)
     {
         if (cfg.VideoSource == "window" && FindCallWindow(callKey) is { } window)
-        {
-            GetWindowRect(window.Handle, out var r);
-            var source = new WindowRecordingSource(window.Handle) { IsBorderRequired = false, IsCursorCaptureEnabled = true };
-            return (source, new Size(r.Right - r.Left, r.Bottom - r.Top), $"окно «{window.Title}»");
-        }
+            return new VideoTarget(window.Handle, null, $"Окно: {window.Title}");
         var hwnd = GetForegroundWindow();
         var screen = hwnd != IntPtr.Zero ? Screen.FromHandle(hwnd) : Screen.PrimaryScreen!;
-        var display = new DisplayRecordingSource(screen.DeviceName) { IsBorderRequired = false, IsCursorCaptureEnabled = true };
-        return (display, screen.Bounds.Size, $"монитор {screen.DeviceName.TrimStart('\\', '.')}");
+        return new VideoTarget(IntPtr.Zero, screen.DeviceName, $"Монитор {screen.DeviceName.TrimStart('\\', '.')}");
+    }
+
+    public static void ValidateTarget(VideoTarget target) => CreateSource(target);
+
+    static (RecordingSourceBase Source, Size Size, string Description) CreateSource(VideoTarget target)
+    {
+        if (target.Window != IntPtr.Zero)
+        {
+            if (!IsWindow(target.Window) || IsIconic(target.Window) || !GetWindowRect(target.Window, out var r))
+                throw new InvalidOperationException("Выбранное окно закрыто или свёрнуто. Выберите другое окно.");
+            var source = new WindowRecordingSource(target.Window) { IsBorderRequired = true, IsCursorCaptureEnabled = true };
+            return (source, new Size(r.Right - r.Left, r.Bottom - r.Top), target.Title);
+        }
+        var screen = Screen.AllScreens.FirstOrDefault(s => s.DeviceName == target.Display)
+            ?? throw new InvalidOperationException("Выбранный монитор отключён. Выберите другой источник.");
+        var display = new DisplayRecordingSource(screen.DeviceName)
+        {
+            RecorderApi = RecorderApi.WindowsGraphicsCapture,
+            IsBorderRequired = true,
+            IsCursorCaptureEnabled = true,
+        };
+        return (display, screen.Bounds.Size, target.Title);
     }
 
     static RecordableWindow? FindCallWindow(string? callKey)
@@ -201,4 +278,6 @@ public sealed class VideoRecorder : IDisposable
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
 }

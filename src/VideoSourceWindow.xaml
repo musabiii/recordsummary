@@ -1,0 +1,31 @@
+<Window x:Class="RecordSummary.VideoSourceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Источник видео" Width="680" Height="480" MinWidth="420" MinHeight="300"
+        WindowStartupLocation="CenterScreen" ThemeMode="System">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition/><RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Text="Какое окно записывать?" FontSize="22" FontWeight="SemiBold"/>
+        <TextBlock x:Name="CurrentSource" Grid.Row="1" Margin="0,8,0,14" TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+        <ListBox x:Name="Sources" Grid.Row="2" MouseDoubleClick="Sources_MouseDoubleClick"
+                 SelectionChanged="Sources_SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 AutomationProperties.Name="Окна и мониторы">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" Margin="6,5"/>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <Grid Grid.Row="3" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Button Content="Обновить список" HorizontalAlignment="Left" Click="Refresh_Click"/>
+            <Button Grid.Column="1" Content="Отмена" IsCancel="True" Margin="12,0,8,0"/>
+            <Button x:Name="ChooseButton" Grid.Column="2" Content="Выбрать" IsDefault="True" IsEnabled="False"
+                    Style="{DynamicResource AccentButtonStyle}" Click="Choose_Click"/>
+        </Grid>
+    </Grid>
+</Window>

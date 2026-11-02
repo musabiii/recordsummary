@@ -57,6 +57,10 @@
                         ToolTip="Записывать видео окна звонка">
                     <TextBlock x:Name="VideoIcon" Style="{StaticResource Icon}" Text="&#xE714;"/>
                 </Button>
+                <Button x:Name="VideoSourceButton" Style="{StaticResource Round}" Click="VideoSource_Click"
+                        AutomationProperties.Name="Выбрать окно для видео" ToolTip="Выбрать окно или монитор для видео">
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE8B7;"/>
+                </Button>
                 <Button x:Name="ShotButton" Style="{StaticResource Round}" Click="Shot_Click" AutomationProperties.Name="Скриншот"
                         ToolTip="Скриншот экрана со звонком — сохранится в запись с привязкой ко времени">
                     <TextBlock x:Name="ShotIcon" Style="{StaticResource Icon}" Text="&#xE722;"/>

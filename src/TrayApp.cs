@@ -23,7 +23,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
 
     Config _cfg = Config.Load();
     readonly NotifyIcon _tray;
-    readonly ToolStripMenuItem _statusItem, _recordItem, _pauseItem, _shotItem, _videoItem, _widgetItem, _autoRecordItem, _autostartItem;
+    readonly ToolStripMenuItem _statusItem, _recordItem, _pauseItem, _shotItem, _videoItem, _videoSourceItem, _widgetItem, _autoRecordItem, _autostartItem;
     readonly CallDetector _detector;
     readonly Dictionary<Color, Icon> _icons = new();
     readonly System.Windows.Forms.Timer _statusTimer = new() { Interval = 1000 };
@@ -38,6 +38,11 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
     CallsWindow? _callsWindow;
     RecordingWidget? _widget;
     VideoRecorder? _video;
+    VideoTarget? _videoTarget;
+    VideoSourceWindow? _sourcePicker;
+    bool _switchingVideo;
+    bool _videoOnResume;
+    bool VideoEnabled => _video?.IsRecording == true || _videoOnResume;
     readonly SynchronizationContext _ui;
 
     public TrayApp()
@@ -47,6 +52,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         _pauseItem = new ToolStripMenuItem("Пауза", null, (_, _) => TogglePause()) { Visible = false };
         _shotItem = new ToolStripMenuItem("Скриншот", null, (_, _) => TakeScreenshot()) { Visible = false };
         _videoItem = new ToolStripMenuItem("Записывать видео", null, (_, _) => ToggleVideo()) { Visible = false };
+        _videoSourceItem = new ToolStripMenuItem("Выбрать окно для видео…", null, (_, _) => ChooseVideoSource()) { Visible = false };
         _ui = SynchronizationContext.Current!;
         _widgetItem = new ToolStripMenuItem("Показать окошко записи", null, (_, _) => ShowWidget()) { Visible = false };
         _autoRecordItem = new ToolStripMenuItem("Записывать звонки без вопроса") { Checked = _cfg.AutoRecord, CheckOnClick = true };
@@ -62,6 +68,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         menu.Items.Add(_pauseItem);
         menu.Items.Add(_shotItem);
         menu.Items.Add(_videoItem);
+        menu.Items.Add(_videoSourceItem);
         menu.Items.Add(_widgetItem);
         menu.Items.Add("Открыть папку записей", null, (_, _) => { Directory.CreateDirectory(_cfg.OutputPath); Shell(_cfg.OutputPath); });
         menu.Items.Add(new ToolStripSeparator());
@@ -269,6 +276,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         _widget.PauseToggled += TogglePause;
         _widget.ScreenshotRequested += TakeScreenshot;
         _widget.VideoToggled += ToggleVideo;
+        _widget.VideoSourceRequested += ChooseVideoSource;
         _widget.StopRequested += () => { if (_recorder != null) StopRecording(); };
         _widget.Dismissed += () =>
         {
@@ -291,7 +299,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         var widget = Widget();
         widget.VideoAvailable = _cfg.VideoMode != "off";
         widget.ShowRecording(_recordingApp, _recorder);
-        widget.SetVideo(_video?.IsRecording == true, _video?.Source);
+        widget.SetVideo(VideoEnabled, _videoTarget?.Title ?? _video?.Source);
         widget.Show();
         UpdateMenu();
     }
@@ -300,19 +308,21 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
 
     void ToggleVideo()
     {
-        if (_recorder == null || _video == null) return;
-        if (_video.IsRecording) _video.Stop();
+        if (_recorder == null || _video == null || _switchingVideo) return;
+        if (VideoEnabled) { _videoOnResume = false; _video.Stop(); }
         else StartVideo();
-        _widget?.SetVideo(_video.IsRecording, _video.Source);
+        _widget?.SetVideo(VideoEnabled, _videoTarget?.Title ?? _video.Source);
         UpdateMenu();
     }
 
     void StartVideo()
     {
+        // На паузе сохраняем выбор и включаем захват только при продолжении звонка.
+        if (_recorder?.IsPaused == true) { _videoOnResume = true; return; }
+        _videoOnResume = false;
         try
         {
-            _video!.Start(_cfg, _detector.ActiveCallKey);
-            if (_recorder!.IsPaused) _video.Pause();
+            _video!.Start(_cfg, _detector.ActiveCallKey, _videoTarget);
         }
         catch (Exception e)
         {
@@ -321,11 +331,52 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         }
     }
 
+    async void ChooseVideoSource()
+    {
+        if (_switchingVideo) return;
+        if (_sourcePicker != null) { _sourcePicker.Activate(); return; }
+        if (_recorder == null || _video == null || _switchingVideo) return;
+        var video = _video;
+        var recorder = _recorder;
+        try
+        {
+            EnsureWpf();
+            var picker = _sourcePicker = new VideoSourceWindow(_videoTarget ?? video.Target);
+            if (picker.ShowDialog() != true || picker.SelectedTarget is not { } target) return;
+            if (_video != video || _recorder != recorder) return;
+            var current = _videoTarget ?? video.Target;
+            if (current?.Window == target.Window && current.Display == target.Display) return;
+
+            _switchingVideo = true;
+            UpdateMenu();
+            VideoRecorder.ValidateTarget(target);
+            bool resume = VideoEnabled;
+            _videoOnResume = false;
+            await video.StopAndWaitAsync();
+            if (_video != video || _recorder != recorder) return;
+            _videoTarget = target;
+            if (resume) StartVideo();
+            _widget?.SetVideo(VideoEnabled, target.Title);
+        }
+        catch (Exception e)
+        {
+            Log.Write($"Не удалось сменить источник видео: {e}");
+            _widget?.SetVideo(VideoEnabled, _videoTarget?.Title ?? _video?.Source);
+            Balloon("Источник видео не изменён", e.Message, null, ToolTipIcon.Error);
+        }
+        finally
+        {
+            _sourcePicker = null;
+            _switchingVideo = false;
+            UpdateMenu();
+        }
+    }
+
     /// <summary>Запись видео упала посреди звонка (например, закрыли окно): звук пишется дальше, видео — выключаем.</summary>
     void OnVideoFailed(VideoRecorder video, string error) => _ui.Post(_ =>
     {
-        if (video != _video || !video.IsRecording) return;
-        video.Stop();
+        if (video != _video || video.IsRecording) return;
+        _videoOnResume = false;
         _widget?.SetVideo(false);
         UpdateMenu();
         Balloon("Видео остановилось", $"{error}\nЗвук записывается дальше — видео можно включить снова.", null, ToolTipIcon.Warning);
@@ -337,9 +388,14 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
     {
         if (_recorder == null) return;
         // Видео на паузе вместе со звуком: оба идут по одним часам записи.
-        if (_recorder.IsPaused) { _recorder.Resume(); _video?.Resume(); }
+        if (_recorder.IsPaused)
+        {
+            _recorder.Resume();
+            if (_videoOnResume) StartVideo();
+            else _video?.Resume();
+        }
         else { _recorder.Pause(); _video?.Pause(); }
-        _widget?.UpdatePaused();
+        _widget?.SetVideo(VideoEnabled, _videoTarget?.Title ?? _video?.Source);
         UpdateMenu();
         UpdateState();
     }
@@ -369,7 +425,10 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         _pauseItem.Visible = _shotItem.Visible = recording;
         _pauseItem.Text = _recorder?.IsPaused == true ? "Продолжить запись" : "Пауза";
         _videoItem.Visible = recording && _cfg.VideoMode != "off";
-        _videoItem.Checked = _video?.IsRecording == true;
+        _videoItem.Checked = VideoEnabled;
+        _videoSourceItem.Visible = _videoItem.Visible;
+        _videoSourceItem.Enabled = _videoItem.Enabled = !_switchingVideo;
+        _videoSourceItem.ToolTipText = _videoTarget?.Title ?? _video?.Source ?? "";
         _widgetItem.Visible = recording && _widget == null;
     }
 
@@ -390,6 +449,8 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
             return;
         }
         _recordingApp = app;
+        _videoTarget = null;
+        _videoOnResume = false;
         _tiedToCall = tiedToCall;
         var rec = _recorder;
         var video = _video = new VideoRecorder(folder, () => rec.Elapsed);
@@ -416,7 +477,9 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         // Видео — первым: конец фрагмента берётся по часам записи, пока они ещё идут.
         _video?.Stop();
         _video = null;
+        _videoOnResume = false;
         _recorder = null;
+        _sourcePicker?.Close();
         _statusTimer.Stop();
         rec.Dispose();
         CloseWidget();
@@ -523,6 +586,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
             _settings?.Close();
             _callsWindow?.Close();
             _widget?.Close();
+            _sourcePicker?.Close();
             _video?.Stop();
             _recorder?.Dispose();
             _detector.Dispose();
