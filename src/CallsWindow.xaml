@@ -52,12 +52,12 @@
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="290"/>
+            <ColumnDefinition x:Name="SidebarColumn" Width="290"/>
             <ColumnDefinition/>
         </Grid.ColumnDefinitions>
 
         <!-- СПИСОК ЗВОНКОВ -->
-        <Grid Margin="8,12,4,8">
+        <Grid x:Name="CallsSidebar" Margin="8,12,4,8">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
             <Grid Margin="4,0,4,8">
                 <TextBox x:Name="SearchBox" TextChanged="Search_TextChanged" Padding="30,0,0,0" VerticalContentAlignment="Center"/>
@@ -104,15 +104,15 @@
         </Grid>
 
         <!-- ЗВОНОК -->
-        <Grid Grid.Column="1" Margin="20,16,24,12">
+        <Grid x:Name="CallDetails" Grid.Column="1" Margin="20,16,24,12">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition/>
+                <RowDefinition x:Name="PlayerRow" Height="Auto"/>
+                <RowDefinition x:Name="ContentRow"/>
             </Grid.RowDefinitions>
 
             <!-- Шапка -->
-            <Grid>
+            <Grid x:Name="CallHeader">
                 <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel Margin="0,0,16,0">
                     <TextBlock x:Name="TitleText" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap" MouseLeftButtonDown="Title_MouseDown"
@@ -148,7 +148,11 @@
 
             <!-- Плеер -->
             <Border x:Name="PlayerCard" Grid.Row="1" Style="{StaticResource Card}" Margin="0,14,0,10">
-                <StackPanel>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                     <!-- Видео экрана: идёт вместе со звуком; вне записанных фрагментов — подсказка -->
                     <Grid x:Name="VideoPanel" Height="320" Margin="0,0,0,12" Background="Black" Visibility="Collapsed"
                           MouseLeftButtonDown="VideoPanel_MouseDown" ToolTip="Дважды щёлкните, чтобы открыть фрагмент в проигрывателе">
@@ -156,7 +160,11 @@
                                       Stretch="Uniform" MediaOpened="Video_MediaOpened" MediaFailed="Video_MediaFailed"/>
                         <TextBlock x:Name="VideoHint" Foreground="#B0B0B0" HorizontalAlignment="Center" VerticalAlignment="Center"
                                    TextWrapping="Wrap" TextAlignment="Center" Margin="24"/>
+                        <Button x:Name="ExpandVideoButton" Content="Развернуть" Click="ExpandVideo_Click"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8"
+                                ToolTip="Развернуть видео на всё окно" AutomationProperties.Name="Развернуть видео"/>
                     </Grid>
+                    <StackPanel Grid.Row="1">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition/>
@@ -190,11 +198,13 @@
                                 MouseLeftButtonDown="Timeline_MouseDown" MouseMove="Timeline_MouseMove" SizeChanged="Timeline_SizeChanged"/>
                     </Grid>
                     <TextBlock x:Name="PlayerError" Style="{StaticResource Hint}" Margin="0,6,0,0" Visibility="Collapsed"/>
-                </StackPanel>
+                    </StackPanel>
+                </Grid>
             </Border>
 
             <!-- Саммари / транскрипт -->
-            <TabControl x:Name="Tabs" Grid.Row="2" Padding="0,8,0,0">
+            <Grid x:Name="CallContent" Grid.Row="2">
+            <TabControl x:Name="Tabs" Padding="0,8,0,0">
                 <TabItem Header="Саммари">
                     <ScrollViewer x:Name="SummaryScroll" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="SummaryPanel" Margin="2,4,12,12" MaxWidth="820" HorizontalAlignment="Left"/>
@@ -213,7 +223,7 @@
             </TabControl>
 
             <!-- Нет звонка / не обработан / ошибка / идёт запись -->
-            <Border x:Name="StatePanel" Grid.Row="2" Style="{StaticResource Card}" Margin="0,14,0,0" Padding="24,20"
+            <Border x:Name="StatePanel" Style="{StaticResource Card}" Margin="0,14,0,0" Padding="24,20"
                     VerticalAlignment="Top" Visibility="Collapsed">
                 <StackPanel>
                     <TextBlock x:Name="StateTitle" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
@@ -222,6 +232,7 @@
                     <Button x:Name="StateButton" Margin="0,14,0,0" HorizontalAlignment="Left" Style="{DynamicResource AccentButtonStyle}" Click="StateButton_Click"/>
                 </StackPanel>
             </Border>
+            </Grid>
         </Grid>
     </Grid>
 </Window>

@@ -65,6 +65,8 @@ public partial class CallsWindow : Window
     List<VideoSegment> _videos = [];
     VideoSegment? _videoSeg;      // фрагмент, открытый в VideoView
     bool _videoReady, _videoPlaying;
+    bool _videoExpanded;
+    WindowState _windowStateBeforeVideo;
     Rectangle? _playhead;
     int _current = -1, _ticks;
     string _query = "";
@@ -108,6 +110,7 @@ public partial class CallsWindow : Window
     /// <summary>Закрыть плеер, чтобы освободить файлы (перед сжатием). Откроется снова при следующем обновлении списка.</summary>
     public void ReleasePlayer()
     {
+        SetVideoExpanded(false);
         _player?.Dispose();
         _player = null;
         CloseVideo();
@@ -171,6 +174,7 @@ public partial class CallsWindow : Window
 
     void ShowCall(CallRecord? call)
     {
+        SetVideoExpanded(false);
         _player?.Dispose();
         _player = null;
         _call = call;
@@ -528,6 +532,12 @@ public partial class CallsWindow : Window
 
     void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && _videoExpanded)
+        {
+            SetVideoExpanded(false);
+            e.Handled = true;
+            return;
+        }
         // Пробел — пауза/воспроизведение, если не печатаем и не нажимаем кнопку.
         if (e.Key != Key.Space || Keyboard.FocusedElement is TextBox or ButtonBase || _player == null) return;
         TogglePlay();
@@ -565,6 +575,35 @@ public partial class CallsWindow : Window
     }
 
     // ---------- Видео ----------
+
+    void ExpandVideo_Click(object sender, RoutedEventArgs e) => SetVideoExpanded(!_videoExpanded);
+
+    void SetVideoExpanded(bool expanded)
+    {
+        if (_videoExpanded == expanded) return;
+        if (expanded && (VideoPanel.Visibility != Visibility.Visible || _player == null)) return;
+        _videoExpanded = expanded;
+
+        CallsSidebar.Visibility = CallHeader.Visibility = CallContent.Visibility =
+            expanded ? Visibility.Collapsed : Visibility.Visible;
+        SidebarColumn.Width = new GridLength(expanded ? 0 : 290);
+        CallDetails.Margin = expanded ? new Thickness(8) : new Thickness(20, 16, 24, 12);
+        PlayerCard.Margin = expanded ? new Thickness(0) : new Thickness(0, 14, 0, 10);
+        PlayerRow.Height = expanded ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        ContentRow.Height = expanded ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        VideoPanel.Height = expanded ? double.NaN : 320;
+        ExpandVideoButton.Content = expanded ? "Свернуть" : "Развернуть";
+        ExpandVideoButton.ToolTip = expanded ? "Вернуть обычный вид (Esc)" : "Развернуть видео на всё окно";
+        System.Windows.Automation.AutomationProperties.SetName(ExpandVideoButton,
+            expanded ? "Свернуть видео" : "Развернуть видео");
+
+        if (expanded)
+        {
+            _windowStateBeforeVideo = WindowState;
+            WindowState = WindowState.Maximized;
+        }
+        else WindowState = _windowStateBeforeVideo;
+    }
 
     /// <summary>
     /// Видео ведёт звук: позиция берётся из плеера звука, видео подтягивается к ней. Вне фрагментов — подсказка.
@@ -643,6 +682,7 @@ public partial class CallsWindow : Window
     {
         if (VideoPanel == null) return;   // вызывается ещё из InitializeComponent
         bool show = VideoToggle.IsChecked == true && _videos.Count > 0;
+        if (!show) SetVideoExpanded(false);
         VideoPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         if (!show) CloseVideo();
         else if (_player != null) SyncVideo(_player.Position, _player.IsPlaying);
