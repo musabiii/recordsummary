@@ -6,7 +6,7 @@
         WindowStartupLocation="Manual" Cursor="Cross" PreviewKeyDown="Picker_KeyDown"
         PreviewMouseUp="Picker_MouseUp">
     <Canvas Background="Transparent" ClipToBounds="True">
-        <Border x:Name="Highlight" Background="#553B82F6" BorderBrush="#FF60A5FA" BorderThickness="3"
+        <Border x:Name="Highlight" Background="#553B82F6" BorderBrush="#FF60A5FA" BorderThickness="4"
                 CornerRadius="4" IsHitTestVisible="False" Visibility="Collapsed"/>
         <Border x:Name="HintPanel" Canvas.ZIndex="1" Width="560" Padding="20,16" CornerRadius="10"
                 Background="#FF20242C" BorderBrush="#FF596171" BorderThickness="1">

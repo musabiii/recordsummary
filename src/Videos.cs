@@ -217,7 +217,7 @@ public sealed class VideoRecorder : IDisposable
             .Concat(windows).ToList();
     }
 
-    static VideoTarget PickTarget(Config cfg, string? callKey)
+    public static VideoTarget PickTarget(Config cfg, string? callKey)
     {
         if (cfg.VideoSource == "window" && FindCallWindow(callKey) is { } window)
             return new VideoTarget(window.Handle, null, $"Окно: {window.Title}");
@@ -234,7 +234,7 @@ public sealed class VideoRecorder : IDisposable
         {
             if (!IsWindow(target.Window) || IsIconic(target.Window) || !GetWindowRect(target.Window, out var r))
                 throw new InvalidOperationException("Выбранное окно закрыто или свёрнуто. Выберите другое окно.");
-            var source = new WindowRecordingSource(target.Window) { IsBorderRequired = true, IsCursorCaptureEnabled = true };
+            var source = new WindowRecordingSource(target.Window) { IsBorderRequired = false, IsCursorCaptureEnabled = true };
             return (source, new Size(r.Right - r.Left, r.Bottom - r.Top), target.Title);
         }
         var screen = Screen.AllScreens.FirstOrDefault(s => s.DeviceName == target.Display)
@@ -242,7 +242,7 @@ public sealed class VideoRecorder : IDisposable
         var display = new DisplayRecordingSource(screen.DeviceName)
         {
             RecorderApi = RecorderApi.WindowsGraphicsCapture,
-            IsBorderRequired = true,
+            IsBorderRequired = false,
             IsCursorCaptureEnabled = true,
         };
         return (display, screen.Bounds.Size, target.Title);
