@@ -40,6 +40,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
     VideoRecorder? _video;
     VideoTarget? _videoTarget;
     VideoSourceWindow? _sourcePicker;
+    VideoWindowPicker? _visualPicker;
     bool _switchingVideo;
     bool _videoOnResume;
     bool VideoEnabled => _video?.IsRecording == true || _videoOnResume;
@@ -334,6 +335,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
     async void ChooseVideoSource()
     {
         if (_switchingVideo) return;
+        if (_visualPicker != null) { _visualPicker.Activate(); return; }
         if (_sourcePicker != null) { _sourcePicker.Activate(); return; }
         if (_recorder == null || _video == null || _switchingVideo) return;
         var video = _video;
@@ -341,8 +343,17 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         try
         {
             EnsureWpf();
-            var picker = _sourcePicker = new VideoSourceWindow(_videoTarget ?? video.Target);
-            if (picker.ShowDialog() != true || picker.SelectedTarget is not { } target) return;
+            var visual = _visualPicker = new VideoWindowPicker();
+            if (visual.ShowDialog() != true) return;
+            _visualPicker = null;
+            var target = visual.SelectedTarget;
+            if (visual.UseList)
+            {
+                var picker = _sourcePicker = new VideoSourceWindow(_videoTarget ?? video.Target);
+                if (picker.ShowDialog() != true) return;
+                target = picker.SelectedTarget;
+            }
+            if (target == null) return;
             if (_video != video || _recorder != recorder) return;
             var current = _videoTarget ?? video.Target;
             if (current?.Window == target.Window && current.Display == target.Display) return;
@@ -366,6 +377,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         }
         finally
         {
+            _visualPicker = null;
             _sourcePicker = null;
             _switchingVideo = false;
             UpdateMenu();
@@ -480,6 +492,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         _videoOnResume = false;
         _recorder = null;
         _sourcePicker?.Close();
+        _visualPicker?.Close();
         _statusTimer.Stop();
         rec.Dispose();
         CloseWidget();
@@ -587,6 +600,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
             _callsWindow?.Close();
             _widget?.Close();
             _sourcePicker?.Close();
+            _visualPicker?.Close();
             _video?.Stop();
             _recorder?.Dispose();
             _detector.Dispose();
