@@ -228,7 +228,7 @@ public sealed class VideoRecorder : IDisposable
 
     public static void ValidateTarget(VideoTarget target) => CreateSource(target);
 
-    static (RecordingSourceBase Source, Size Size, string Description) CreateSource(VideoTarget target)
+    internal static (RecordingSourceBase Source, Size Size, string Description) CreateSource(VideoTarget target)
     {
         if (target.Window != IntPtr.Zero)
         {

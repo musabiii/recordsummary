@@ -26,7 +26,7 @@ public partial class RecordingWidget : Window
     /// <summary>"Записать" в режиме предложения.</summary>
     public event Action? RecordRequested;
     public event Action? PauseToggled;
-    public event Action? ScreenshotRequested;
+    public event Action<bool>? ScreenshotRequested;
     public event Action? VideoToggled;
     public event Action? VideoSourceRequested;
 
@@ -160,7 +160,8 @@ public partial class RecordingWidget : Window
 
     DispatcherTimer? _shotFlash;
 
-    void Shot_Click(object sender, RoutedEventArgs e) => ScreenshotRequested?.Invoke();
+    void Shot_Click(object sender, RoutedEventArgs e) =>
+        ScreenshotRequested?.Invoke((Keyboard.Modifiers & ModifierKeys.Control) != 0);
 
     void Video_Click(object sender, RoutedEventArgs e) => VideoToggled?.Invoke();
     void VideoSource_Click(object sender, RoutedEventArgs e) => VideoSourceRequested?.Invoke();

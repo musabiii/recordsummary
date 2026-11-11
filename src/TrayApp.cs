@@ -43,6 +43,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
     VideoWindowPicker? _visualPicker;
     VideoSourceFrame? _sourceFrame;
     bool _showSourceFrame;
+    bool _takingScreenshot;
     bool _switchingVideo;
     bool _videoOnResume;
     bool VideoEnabled => _video?.IsRecording == true || _videoOnResume;
@@ -53,7 +54,9 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         _statusItem = new ToolStripMenuItem("Жду звонка") { Enabled = false };
         _recordItem = new ToolStripMenuItem("Начать запись", null, (_, _) => ToggleRecording());
         _pauseItem = new ToolStripMenuItem("Пауза", null, (_, _) => TogglePause()) { Visible = false };
-        _shotItem = new ToolStripMenuItem("Скриншот", null, (_, _) => TakeScreenshot()) { Visible = false };
+        _shotItem = new ToolStripMenuItem("Скриншот источника", null,
+            (_, _) => TakeScreenshot((Control.ModifierKeys & Keys.Control) != 0))
+            { Visible = false, ToolTipText = "Ctrl + клик — снимок всего монитора источника" };
         _videoItem = new ToolStripMenuItem("Записывать видео", null, (_, _) => ToggleVideo()) { Visible = false };
         _videoSourceItem = new ToolStripMenuItem("Выбрать окно для видео…", null, (_, _) => ChooseVideoSource()) { Visible = false };
         _ui = SynchronizationContext.Current!;
@@ -430,13 +433,17 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
         UpdateState();
     }
 
-    void TakeScreenshot()
+    async void TakeScreenshot(bool wholeMonitor)
     {
-        if (_recorder == null) return;
+        if (_recorder == null || _takingScreenshot) return;
+        var recorder = _recorder;
+        _takingScreenshot = true;
         try
         {
-            Screenshots.Capture(_recorder.Folder, _recorder.Elapsed);
-            int count = Screenshots.Count(_recorder.Folder);
+            var source = _videoTarget ?? _video?.Target ?? VideoRecorder.PickTarget(_cfg, _detector.ActiveCallKey);
+            await Screenshots.CaptureAsync(recorder.Folder, recorder.Elapsed, source, wholeMonitor);
+            if (_recorder != recorder) return;
+            int count = Screenshots.Count(recorder.Folder);
             if (_widget != null) _widget.ShowShotSaved(count);
             else Balloon("Скриншот сохранён", $"Скриншот {count} в записи звонка.", null);
         }
@@ -445,6 +452,7 @@ public sealed class TrayApp : ApplicationContext, ISettingsHost, ICallsHost
             Log.Write($"Скриншот не сохранён: {e}");
             Balloon("Скриншот не сохранён", e.Message, null, ToolTipIcon.Error);
         }
+        finally { _takingScreenshot = false; }
     }
 
     /// <summary>Пункты меню, которые зависят от записи: пауза, скриншот и "Показать окошко".</summary>
